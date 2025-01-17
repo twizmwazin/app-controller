@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 poem = "3.1.6"
 poem-openapi = { version = "5.1.5", features = ["redoc"] }
+thiserror = "2.0.11"
 tokio = { version = "1.28", features = ["full"] }
