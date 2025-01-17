@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use crate::types::{App, AppConfig, AppId, AppStatus};
 use thiserror::Error;
 
@@ -12,49 +14,52 @@ pub enum BackendError {
 /// Backend trait for the app controller.
 pub trait AppControllerBackend: Send + Sync {
     /// Create a new app with the given configuration.
-    fn create_app(&self, config: AppConfig) -> Result<App, BackendError>;
+    fn create_app(
+        &self,
+        config: AppConfig,
+    ) -> impl Future<Output = Result<App, BackendError>> + Send;
 
     /// Start the app with the given ID.
-    fn start_app(&self, id: AppId) -> Result<AppStatus, BackendError>;
+    fn start_app(&self, id: AppId) -> impl Future<Output = Result<AppStatus, BackendError>> + Send;
 
     /// Stop the app with the given ID.
-    fn stop_app(&self, id: AppId) -> Result<AppStatus, BackendError>;
+    fn stop_app(&self, id: AppId) -> impl Future<Output = Result<AppStatus, BackendError>> + Send;
 
     /// Delete the app with the given ID.
-    fn delete_app(&self, id: AppId) -> Result<(), BackendError>;
+    fn delete_app(&self, id: AppId) -> impl Future<Output = Result<(), BackendError>> + Send;
 
     /// Get the app with the given ID.
-    fn get_app(&self, id: AppId) -> Result<App, BackendError>;
+    fn get_app(&self, id: AppId) -> impl Future<Output = Result<App, BackendError>> + Send;
 
     /// Get all apps currently managed by the controller.
-    fn get_all_apps(&self) -> Result<Vec<App>, BackendError>;
+    fn get_all_apps(&self) -> impl Future<Output = Result<Vec<App>, BackendError>> + Send;
 }
 
 #[derive(Default)]
 pub struct BackendImpl {}
 
 impl AppControllerBackend for BackendImpl {
-    fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
+    async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
         todo!()
     }
 
-    fn start_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
+    async fn start_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
         todo!()
     }
 
-    fn stop_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
+    async fn stop_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
         todo!()
     }
 
-    fn delete_app(&self, id: AppId) -> Result<(), BackendError> {
+    async fn delete_app(&self, id: AppId) -> Result<(), BackendError> {
         todo!()
     }
 
-    fn get_app(&self, id: AppId) -> Result<App, BackendError> {
+    async fn get_app(&self, id: AppId) -> Result<App, BackendError> {
         todo!()
     }
 
-    fn get_all_apps(&self) -> Result<Vec<App>, BackendError> {
+    async fn get_all_apps(&self) -> Result<Vec<App>, BackendError> {
         todo!()
     }
 }

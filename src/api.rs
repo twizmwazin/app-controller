@@ -90,7 +90,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// Create new app
     #[oai(path = "/app", method = "post")]
     async fn create_app(&self, config: Json<AppConfig>) -> CreateAppResponse {
-        match self.0.create_app(config.0) {
+        match self.0.create_app(config.0).await {
             Ok(app) => CreateAppResponse::Ok(Json(app)),
             Err(err) => CreateAppResponse::InternalError(Json(err.to_string())),
         }
@@ -101,7 +101,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// The app must be created first.
     #[oai(path = "/app/{id}/start", method = "post")]
     async fn start_app(&self, id: Json<AppId>) -> StartAppResponse {
-        match self.0.start_app(id.0) {
+        match self.0.start_app(id.0).await {
             Ok(status) => StartAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StartAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => StartAppResponse::InternalError(Json(msg)),
@@ -111,7 +111,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// Stop app
     #[oai(path = "/app/{id}/stop", method = "post")]
     async fn stop_app(&self, id: Json<AppId>) -> StopAppResponse {
-        match self.0.stop_app(id.0) {
+        match self.0.stop_app(id.0).await {
             Ok(status) => StopAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StopAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => StopAppResponse::InternalError(Json(msg)),
@@ -123,7 +123,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// The app must be stopped first.
     #[oai(path = "/app/{id}", method = "delete")]
     async fn delete_app(&self, id: Json<AppId>) -> DeleteAppResponse {
-        match self.0.delete_app(id.0) {
+        match self.0.delete_app(id.0).await {
             Ok(()) => DeleteAppResponse::Ok,
             Err(BackendError::NotFound) => DeleteAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => DeleteAppResponse::InternalError(Json(msg)),
@@ -133,7 +133,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// Get app
     #[oai(path = "/app/{id}", method = "get")]
     async fn get_app(&self, id: Json<AppId>) -> GetAppResponse {
-        match self.0.get_app(id.0) {
+        match self.0.get_app(id.0).await {
             Ok(app) => GetAppResponse::Ok(Json(app)),
             Err(BackendError::NotFound) => GetAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => GetAppResponse::InternalError(Json(msg)),
@@ -143,7 +143,7 @@ impl<B: AppControllerBackend> Api<B> {
     /// Get all apps
     #[oai(path = "/app", method = "get")]
     async fn get_all_apps(&self) -> GetAllAppsResponse {
-        match self.0.get_all_apps() {
+        match self.0.get_all_apps().await {
             Ok(apps) => GetAllAppsResponse::Ok(Json(apps)),
             Err(err) => GetAllAppsResponse::InternalError(Json(err.to_string())),
         }
