@@ -1,9 +1,11 @@
 use poem_openapi::{Enum, Object};
+use serde::{Deserialize, Serialize};
+use strum::EnumString;
 
 /// Interaction model used by the app. The idea here is to allow different ways
 /// of running and presenting an interactive app. For now, only X11 is
 /// supported.
-#[derive(Debug, Clone, Default, Enum)]
+#[derive(Debug, Clone, Default, Enum, Serialize, Deserialize, EnumString)]
 pub enum InteractionModel {
     /// Unknown interaction model.
     #[default]
@@ -15,6 +17,8 @@ pub enum InteractionModel {
 
 #[derive(Debug, Clone, Default, Object)]
 pub struct AppConfig {
+    /// Name of the app.
+    pub name: String,
     /// Interaction model to use for the app.
     pub interaction_model: InteractionModel,
     /// Container image to use for the app.
