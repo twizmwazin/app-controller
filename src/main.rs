@@ -10,6 +10,8 @@ fn index() -> Redirect {
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    tracing_subscriber::fmt::init();
+
     let k8s_client = Client::try_default().await.unwrap();
     let backend = BackendImpl::new(k8s_client);
     let api_service = OpenApiService::new(Api::from(backend), "App Controller", "0.1")
