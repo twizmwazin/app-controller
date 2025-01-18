@@ -15,7 +15,7 @@ async fn main() -> Result<(), std::io::Error> {
     let api_service = OpenApiService::new(Api::from(backend), "App Controller", "0.1")
         .server("http://localhost:3000/api");
 
-    let ui = api_service.redoc();
+    let ui = api_service.rapidoc();
 
     let app = Route::new()
         .nest("/api", api_service)
