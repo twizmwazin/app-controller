@@ -1,4 +1,4 @@
-use poem_openapi::{payload::Json, ApiResponse, OpenApi};
+use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
@@ -99,8 +99,8 @@ impl<B: AppControllerBackend> Api<B> {
     /// Start app
     ///
     /// The app must be created first.
-    #[oai(path = "/app/{id}/start", method = "post")]
-    async fn start_app(&self, id: Json<AppId>) -> StartAppResponse {
+    #[oai(path = "/app/:id/start", method = "post")]
+    async fn start_app(&self, id: Path<AppId>) -> StartAppResponse {
         match self.0.start_app(id.0).await {
             Ok(status) => StartAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StartAppResponse::NotFound,
@@ -109,8 +109,8 @@ impl<B: AppControllerBackend> Api<B> {
     }
 
     /// Stop app
-    #[oai(path = "/app/{id}/stop", method = "post")]
-    async fn stop_app(&self, id: Json<AppId>) -> StopAppResponse {
+    #[oai(path = "/app/:id/stop", method = "post")]
+    async fn stop_app(&self, id: Path<AppId>) -> StopAppResponse {
         match self.0.stop_app(id.0).await {
             Ok(status) => StopAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StopAppResponse::NotFound,
@@ -121,8 +121,8 @@ impl<B: AppControllerBackend> Api<B> {
     /// Delete app
     ///
     /// The app must be stopped first.
-    #[oai(path = "/app/{id}", method = "delete")]
-    async fn delete_app(&self, id: Json<AppId>) -> DeleteAppResponse {
+    #[oai(path = "/app/:id", method = "delete")]
+    async fn delete_app(&self, id: Path<AppId>) -> DeleteAppResponse {
         match self.0.delete_app(id.0).await {
             Ok(()) => DeleteAppResponse::Ok,
             Err(BackendError::NotFound) => DeleteAppResponse::NotFound,
@@ -131,8 +131,8 @@ impl<B: AppControllerBackend> Api<B> {
     }
 
     /// Get app
-    #[oai(path = "/app/{id}", method = "get")]
-    async fn get_app(&self, id: Json<AppId>) -> GetAppResponse {
+    #[oai(path = "/app/:id", method = "get")]
+    async fn get_app(&self, id: Path<AppId>) -> GetAppResponse {
         match self.0.get_app(id.0).await {
             Ok(app) => GetAppResponse::Ok(Json(app)),
             Err(BackendError::NotFound) => GetAppResponse::NotFound,
