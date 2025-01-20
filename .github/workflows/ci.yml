@@ -38,4 +38,4 @@ jobs:
         with:
           components: clippy
       - name: Clippy Check
-        run: cargo clippy --all-features
+        run: cargo clippy --all-features -- -D warnings
