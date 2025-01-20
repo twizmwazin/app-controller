@@ -28,4 +28,3 @@ impl From<std::string::FromUtf8Error> for BackendError {
         Self::InternalError(err.to_string())
     }
 }
-
