@@ -48,7 +48,7 @@ jobs:
         container:
           [
             { name: "app-controller", path: "." },
-            { name: "x11host", path: "containers/x11-host" },
+            { name: "x11-host", path: "containers/x11-host" },
             { name: "firefox-demo", path: "containers/firefox-demo" },
           ]
     runs-on: ${{ matrix.os }}
@@ -72,16 +72,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          push: true
-          tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${{ github.sha }}
-          context: ${{ matrix.container.path }}
-          file: ${{ matrix.container.path }}/Containerfile
-
-      - name: Update latest tag
-        uses: docker/build-push-action@v6
-        if: github.ref == 'refs/heads/main'
-        with:
-          push: true
-          tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:latest
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}
           context: ${{ matrix.container.path }}
           file: ${{ matrix.container.path }}/Containerfile
