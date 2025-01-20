@@ -72,6 +72,7 @@ jobs:
           push: true
           tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${{ github.sha }}
           context: ${{ matrix.container.path }}
+          file: ${{ matrix.container.path }}/Containerfile
 
       - name: Update latest tag
         if: github.ref == 'refs/heads/main'
