@@ -1,0 +1,26 @@
+FROM alpine:3.21
+
+# Add packages
+RUN apk add --no-cache sway wayvnc xwayland xhost novnc websockify
+
+# Add application user
+RUN addgroup -S vnc-user && adduser -S vnc-user -G vnc-user
+
+# Copy sway and wayvnc configs
+COPY sway_config /etc/sway/config
+COPY wayvnc_config /etc/wayvnc/config
+
+# Custom xwayland startup
+RUN echo "exec /usr/bin/Xwayland -extension MIT-SHM -listen tcp" >> /usr/local/bin/Xwayland \
+    && chmod +x /usr/local/bin/Xwayland
+
+# Set environment variables
+ENV XDG_RUNTIME_DIR=/tmp \
+    SWAYSOCK=/tmp/sway-ipc.sock \
+    WLR_BACKENDS=headless \
+    WLR_LIBINPUT_NO_DEVICES=1 \
+    WLR_RENDERER=pixman
+
+# Add entrypoint
+USER vnc-user
+CMD ["sway"]

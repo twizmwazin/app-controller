@@ -1,9 +1,19 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use crate::types::{App, AppConfig, AppId, AppStatus, InteractionModel};
-use k8s_openapi::api::{apps::v1::Deployment, core::v1::Service};
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use k8s_openapi::{
+    api::{
+        apps::v1::{Deployment, DeploymentSpec},
+        core::v1::{
+            Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, SecurityContext, Service,
+            ServicePort, ServiceSpec,
+        },
+    },
+    apimachinery::pkg::apis::meta::v1::LabelSelector,
+};
 use kube::{
-    api::{ListParams, Patch},
+    api::{ListParams, ObjectMeta, Patch},
     Api, Client,
 };
 use poem_openapi::types::ParseFromParameter;
@@ -44,64 +54,103 @@ impl AppControllerBackend for KubernetesBackend {
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
 
-        let labels = serde_json::json!({
-            "app-controller-id": format!("{}", unique_id),
-            "app-controller-name": config.name,
-            "app-controller-interaction-model": config.interaction_model,
-            "app-controller-image": config.image,
-        });
+        let match_labels =
+            BTreeMap::from([("app-controller-id".to_string(), format!("{}", unique_id))]);
+        let labels = BTreeMap::from([
+            ("app-controller-id".to_string(), format!("{}", unique_id)),
+            ("app-controller-name".to_string(), config.name.clone()),
+            (
+                "app-controller-interaction-model".to_string(),
+                config.interaction_model.to_string(),
+            ),
+            (
+                "app-controller-image".to_string(),
+                BASE64_URL_SAFE_NO_PAD.encode(config.image.as_bytes()),
+            ),
+        ]);
 
-        let service: Service = serde_json::from_value(serde_json::json!({
-            "apiVersion": "v1",
-            "kind": "Service",
-            "metadata": {
-                "name": name,
-                "labels": labels,
+        let service = Service {
+            metadata: ObjectMeta {
+                name: Some(name.clone()),
+                labels: Some(labels.clone()),
+                ..Default::default()
             },
-            "spec": {
-                "selector": {
-                    "app": name,
-                },
-                "ports": [{
-                    "protocol": "TCP",
-                    "port": 80,
-                    "targetPort": 5910,
-                }],
-            },
-        }))?;
+            spec: Some(ServiceSpec {
+                selector: Some(match_labels.clone()),
+                ports: Some(vec![
+                    ServicePort {
+                        name: Some("vnc".to_string()),
+                        protocol: Some("TCP".to_string()),
+                        port: 5910,
+                        ..Default::default()
+                    },
+                    ServicePort {
+                        name: Some("vnc-websocket".to_string()),
+                        protocol: Some("TCP".to_string()),
+                        port: 5911,
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
-        let deployment: Deployment = serde_json::from_value(serde_json::json!({
-            "apiVersion": "apps/v1",
-            "kind": "Deployment",
-            "metadata": {
-                "name": name,
-                "labels": labels,
+        let deployment = Deployment {
+            metadata: ObjectMeta {
+                name: Some(name.clone()),
+                labels: Some(labels.clone()),
+                ..Default::default()
             },
-            "spec": {
-                "replicas": 0,
-                "selector": {
-                    "matchLabels": {
-                        "app": name,
-                    },
+            spec: Some(DeploymentSpec {
+                replicas: Some(0),
+                selector: LabelSelector {
+                    match_labels: Some(match_labels.clone()),
+                    ..Default::default()
                 },
-                "template": {
-                    "metadata": {
-                        "labels": {
-                            "app": name,
-                        },
-                    },
-                    "spec": {
-                        "containers": [{
-                        "name": name,
-                        "image": config.image,
-                        "ports": [{
-                            "containerPort": 5910,
+                template: PodTemplateSpec {
+                    metadata: Some(ObjectMeta {
+                        labels: Some(match_labels.clone()),
+                        ..Default::default()
+                    }),
+                    spec: Some(PodSpec {
+                        init_containers: Some(vec![Container {
+                            name: "x11-host".to_string(),
+                            image: Some("x11-host:dev".to_string()),
+                            ports: Some(vec![
+                                ContainerPort {
+                                    container_port: 5910,
+                                    ..Default::default()
+                                },
+                                ContainerPort {
+                                    container_port: 5911,
+                                    ..Default::default()
+                                },
+                            ]),
+                            restart_policy: Some("Always".to_string()),
+                            security_context: Some(SecurityContext {
+                                privileged: Some(true),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        }]),
+                        containers: vec![Container {
+                            name: name.clone(),
+                            image: Some(config.image.clone()),
+                            env: Some(vec![EnvVar {
+                                name: "DISPLAY".to_string(),
+                                value: Some(":0.0".to_string()),
+                                ..Default::default()
+                            }]),
+                            ..Default::default()
                         }],
-                        }],
-                    },
+                        ..Default::default()
+                    }),
                 },
-            },
-        }))?;
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
         // Create the service.
         let service_api: Api<Service> = Api::default_namespaced(self.client.clone());
@@ -180,7 +229,9 @@ impl AppControllerBackend for KubernetesBackend {
                 &labels["app-controller-interaction-model"],
             )
             .map_err(|e| BackendError::InternalError(e.to_string()))?,
-            image: labels["app-controller-image"].to_string(),
+            image: String::from_utf8(
+                BASE64_URL_SAFE_NO_PAD.decode(labels["app-controller-image"].as_bytes())?,
+            )?,
         };
 
         Ok(App { id, config })
@@ -202,7 +253,12 @@ impl AppControllerBackend for KubernetesBackend {
                         &labels["app-controller-interaction-model"],
                     )
                     .ok()?,
-                    image: labels["app-controller-image"].to_string(),
+                    image: String::from_utf8(
+                        BASE64_URL_SAFE_NO_PAD
+                            .decode(labels["app-controller-image"].as_bytes())
+                            .unwrap(),
+                    )
+                    .unwrap(),
                 };
                 Some(App { id, config })
             })

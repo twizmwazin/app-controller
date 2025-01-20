@@ -8,12 +8,6 @@ pub enum BackendError {
     InternalError(String),
 }
 
-impl From<serde_json::Error> for BackendError {
-    fn from(err: serde_json::Error) -> Self {
-        Self::InternalError(err.to_string())
-    }
-}
-
 impl From<kube::Error> for BackendError {
     fn from(err: kube::Error) -> Self {
         match err {
@@ -22,3 +16,16 @@ impl From<kube::Error> for BackendError {
         }
     }
 }
+
+impl From<base64::DecodeError> for BackendError {
+    fn from(err: base64::DecodeError) -> Self {
+        Self::InternalError(err.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for BackendError {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Self::InternalError(err.to_string())
+    }
+}
+

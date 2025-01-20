@@ -80,12 +80,12 @@ dependencies = [
 name = "app-controller"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "k8s-openapi",
  "kube",
  "poem",
  "poem-openapi",
  "rand",
- "serde",
  "serde_json",
  "strum",
  "thiserror 2.0.11",

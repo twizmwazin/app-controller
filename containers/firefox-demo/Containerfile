@@ -1,0 +1,6 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache firefox
+RUN apk add --no-cache font-noto
+
+CMD ["firefox"]
