@@ -70,13 +70,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${GITHUB_REF}
+          tags: ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${{ github.sha }}
           context: ${{ matrix.container.path }}
 
       - name: Update latest tag
         if: github.ref == 'refs/heads/main'
         run: |
           docker tag \
-              ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${GITHUB_REF} \
+              ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:${{ github.sha }} \
               ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:latest \
           && docker push ghcr.io/twizmwazin/app-controller/${{ matrix.container.name }}:latest
