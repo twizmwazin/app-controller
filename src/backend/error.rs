@@ -17,12 +17,6 @@ impl From<kube::Error> for BackendError {
     }
 }
 
-impl From<base64::DecodeError> for BackendError {
-    fn from(err: base64::DecodeError) -> Self {
-        Self::InternalError(err.to_string())
-    }
-}
-
 impl From<std::string::FromUtf8Error> for BackendError {
     fn from(err: std::string::FromUtf8Error) -> Self {
         Self::InternalError(err.to_string())

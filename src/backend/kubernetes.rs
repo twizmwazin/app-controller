@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use crate::types::{App, AppConfig, AppId, AppStatus, InteractionModel};
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -63,10 +62,7 @@ impl AppControllerBackend for KubernetesBackend {
                 "app-controller-interaction-model".to_string(),
                 config.interaction_model.to_string(),
             ),
-            (
-                "app-controller-image".to_string(),
-                BASE64_URL_SAFE_NO_PAD.encode(config.image.as_bytes()),
-            ),
+            ("app-controller-image".to_string(), config.image.to_string()),
         ]);
 
         let service = Service {
@@ -244,16 +240,12 @@ impl AppControllerBackend for KubernetesBackend {
                 )?,
             )
             .map_err(|e| BackendError::InternalError(e.to_string()))?,
-            image: String::from_utf8(
-                BASE64_URL_SAFE_NO_PAD.decode(
-                    annotations
-                        .get("app-controller-image")
-                        .ok_or(BackendError::InternalError(
-                            "Missing app-controller-image annotation in deployment".to_string(),
-                        ))?
-                        .as_bytes(),
-                )?,
-            )?,
+            image: annotations
+                .get("app-controller-image")
+                .ok_or(BackendError::InternalError(
+                    "Missing app-controller-image annotation in deployment".to_string(),
+                ))
+                .map(|s| s.to_string())?,
         };
 
         Ok(App { id, config })
@@ -276,12 +268,7 @@ impl AppControllerBackend for KubernetesBackend {
                         &annotations["app-controller-interaction-model"],
                     )
                     .ok()?,
-                    image: String::from_utf8(
-                        BASE64_URL_SAFE_NO_PAD
-                            .decode(annotations["app-controller-image"].as_bytes())
-                            .unwrap(),
-                    )
-                    .unwrap(),
+                    image: annotations["app-controller-image"].to_string(),
                 };
                 Some(App { id, config })
             })
