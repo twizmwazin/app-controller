@@ -54,10 +54,8 @@ impl AppControllerBackend for KubernetesBackend {
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
 
-        let match_labels =
-            BTreeMap::from([("app-controller-id".to_string(), format!("{}", unique_id))]);
-        let labels = BTreeMap::from([
-            ("app-controller-id".to_string(), format!("{}", unique_id)),
+        let labels = BTreeMap::from([("app-controller-id".to_string(), format!("{}", unique_id))]);
+        let annotations = BTreeMap::from([
             ("app-controller-name".to_string(), config.name.clone()),
             (
                 "app-controller-interaction-model".to_string(),
@@ -73,10 +71,11 @@ impl AppControllerBackend for KubernetesBackend {
             metadata: ObjectMeta {
                 name: Some(name.clone()),
                 labels: Some(labels.clone()),
+                annotations: Some(annotations.clone()),
                 ..Default::default()
             },
             spec: Some(ServiceSpec {
-                selector: Some(match_labels.clone()),
+                selector: Some(labels.clone()),
                 ports: Some(vec![
                     ServicePort {
                         name: Some("vnc".to_string()),
@@ -100,17 +99,18 @@ impl AppControllerBackend for KubernetesBackend {
             metadata: ObjectMeta {
                 name: Some(name.clone()),
                 labels: Some(labels.clone()),
+                annotations: Some(annotations.clone()),
                 ..Default::default()
             },
             spec: Some(DeploymentSpec {
                 replicas: Some(0),
                 selector: LabelSelector {
-                    match_labels: Some(match_labels.clone()),
+                    match_labels: Some(labels.clone()),
                     ..Default::default()
                 },
                 template: PodTemplateSpec {
                     metadata: Some(ObjectMeta {
-                        labels: Some(match_labels.clone()),
+                        labels: Some(labels.clone()),
                         ..Default::default()
                     }),
                     spec: Some(PodSpec {
@@ -222,15 +222,35 @@ impl AppControllerBackend for KubernetesBackend {
 
     async fn get_app(&self, id: AppId) -> Result<App, BackendError> {
         let deployment = self.get_deployment(id).await?;
-        let labels = deployment.metadata.labels.ok_or(BackendError::NotFound)?;
+        let annotations = deployment
+            .metadata
+            .annotations
+            .ok_or(BackendError::NotFound)?;
         let config = AppConfig {
-            name: labels["app-controller-name"].to_string(),
+            name: annotations
+                .get("app-controller-name")
+                .ok_or(BackendError::InternalError(
+                    "Missing app-controller-name annotation in deployment".to_string(),
+                ))?
+                .to_string(),
             interaction_model: InteractionModel::from_str(
-                &labels["app-controller-interaction-model"],
+                annotations.get("app-controller-interaction-model").ok_or(
+                    BackendError::InternalError(
+                        "Missing app-controller-interaction-model annotation in deployment"
+                            .to_string(),
+                    ),
+                )?,
             )
             .map_err(|e| BackendError::InternalError(e.to_string()))?,
             image: String::from_utf8(
-                BASE64_URL_SAFE_NO_PAD.decode(labels["app-controller-image"].as_bytes())?,
+                BASE64_URL_SAFE_NO_PAD.decode(
+                    annotations
+                        .get("app-controller-image")
+                        .ok_or(BackendError::InternalError(
+                            "Missing app-controller-image annotation in deployment".to_string(),
+                        ))?
+                        .as_bytes(),
+                )?,
             )?,
         };
 
@@ -246,16 +266,17 @@ impl AppControllerBackend for KubernetesBackend {
             .into_iter()
             .filter_map(|deployment| {
                 let labels = deployment.metadata.labels?;
+                let annotations = deployment.metadata.annotations?;
                 let id = labels["app-controller-id"].parse().ok()?;
                 let config = AppConfig {
-                    name: labels["app-controller-name"].to_string(),
+                    name: annotations["app-controller-name"].to_string(),
                     interaction_model: InteractionModel::parse_from_parameter(
-                        &labels["app-controller-interaction-model"],
+                        &annotations["app-controller-interaction-model"],
                     )
                     .ok()?,
                     image: String::from_utf8(
                         BASE64_URL_SAFE_NO_PAD
-                            .decode(labels["app-controller-image"].as_bytes())
+                            .decode(annotations["app-controller-image"].as_bytes())
                             .unwrap(),
                     )
                     .unwrap(),
