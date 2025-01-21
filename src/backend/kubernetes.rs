@@ -20,6 +20,8 @@ use poem_openapi::types::ParseFromParameter;
 
 use super::{AppControllerBackend, BackendError};
 
+static X11_HOST_IMAGE: &str = "ghcr.io/twizmwazin/app-controller/x11-host";
+
 pub struct KubernetesBackend {
     client: Client,
 }
@@ -116,7 +118,7 @@ impl AppControllerBackend for KubernetesBackend {
                     spec: Some(PodSpec {
                         init_containers: Some(vec![Container {
                             name: "x11-host".to_string(),
-                            image: Some("x11-host:dev".to_string()),
+                            image: Some(X11_HOST_IMAGE.to_string()),
                             ports: Some(vec![
                                 ContainerPort {
                                     container_port: 5910,
