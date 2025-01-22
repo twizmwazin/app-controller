@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
         RwLock,
@@ -79,5 +80,9 @@ impl AppControllerBackend for MockBackend {
 
     async fn get_all_apps(&self) -> Result<Vec<App>, BackendError> {
         Ok(self.apps.read().unwrap().values().cloned().collect())
+    }
+
+    async fn get_app_addr(&self, _id: AppId) -> Result<(IpAddr, u16), BackendError> {
+        todo!()
     }
 }

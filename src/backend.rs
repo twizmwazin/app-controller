@@ -8,7 +8,7 @@ pub use kubernetes::KubernetesBackend;
 #[cfg(test)]
 pub use mock::MockBackend;
 
-use std::future::Future;
+use std::{future::Future, net::IpAddr};
 
 use crate::types::{App, AppConfig, AppId, AppStatus};
 
@@ -34,4 +34,10 @@ pub trait AppControllerBackend: Send + Sync {
 
     /// Get all apps currently managed by the controller.
     fn get_all_apps(&self) -> impl Future<Output = Result<Vec<App>, BackendError>> + Send;
+
+    /// Get the address and port of the app with the given ID.
+    fn get_app_addr(
+        &self,
+        id: AppId,
+    ) -> impl Future<Output = Result<(IpAddr, u16), BackendError>> + Send;
 }

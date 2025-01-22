@@ -2,7 +2,7 @@ use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
-    types::{App, AppConfig, AppId, AppStatus},
+    types::{App, AppConfig, AppId, AppStatus, SocketAddr},
 };
 
 pub struct Api<B: AppControllerBackend + 'static>(B);
@@ -85,6 +85,19 @@ enum GetAllAppsResponse {
     InternalError(Json<String>),
 }
 
+#[derive(ApiResponse)]
+enum GetAppAddrResponse {
+    /// The address and port of the app were found successfully.
+    #[oai(status = 200)]
+    Ok(Json<SocketAddr>),
+    /// The app could not be found.
+    #[oai(status = 404)]
+    NotFound,
+    /// The app could not be found because of an internal error.
+    #[oai(status = 500)]
+    InternalError,
+}
+
 #[OpenApi]
 impl<B: AppControllerBackend> Api<B> {
     /// Create new app
@@ -146,6 +159,19 @@ impl<B: AppControllerBackend> Api<B> {
         match self.0.get_all_apps().await {
             Ok(apps) => GetAllAppsResponse::Ok(Json(apps)),
             Err(err) => GetAllAppsResponse::InternalError(Json(err.to_string())),
+        }
+    }
+
+    /// Get internal app address
+    #[oai(path = "/app/:id/addr", method = "get")]
+    async fn get_app_addr(&self, id: Path<AppId>) -> GetAppAddrResponse {
+        match self.0.get_app_addr(id.0).await {
+            Ok((addr, port)) => GetAppAddrResponse::Ok(Json(SocketAddr {
+                ip: addr.to_string(),
+                port,
+            })),
+            Err(BackendError::NotFound) => GetAppAddrResponse::NotFound,
+            Err(BackendError::InternalError(_)) => GetAppAddrResponse::InternalError,
         }
     }
 }

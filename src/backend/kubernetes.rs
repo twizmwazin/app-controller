@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
 use crate::types::{App, AppConfig, AppId, AppStatus, InteractionModel};
 use k8s_openapi::{
@@ -307,5 +307,33 @@ impl AppControllerBackend for KubernetesBackend {
             .collect::<Result<Vec<App>, BackendError>>()?;
 
         Ok(apps)
+    }
+
+    async fn get_app_addr(&self, id: AppId) -> Result<(IpAddr, u16), BackendError> {
+        let service_api: Api<Service> = Api::default_namespaced(self.client.clone());
+        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let list = service_api.list(&list_params).await?;
+
+        // There should be only one service with the given ID.
+        let service = list
+            .items
+            .into_iter()
+            .next()
+            .ok_or(BackendError::NotFound)?;
+
+        // Get the IP address of the service.
+        let raw = service
+            .spec
+            .ok_or(BackendError::InternalError(
+                "Missing spec in service".to_string(),
+            ))?
+            .cluster_ip
+            .ok_or(BackendError::InternalError(
+                "Missing cluster IP in service".to_string(),
+            ))?;
+
+        IpAddr::from_str(&raw)
+            .map(|ip| (ip, 5911))
+            .map_err(|e| BackendError::InternalError(e.to_string()))
     }
 }

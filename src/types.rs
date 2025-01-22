@@ -45,3 +45,13 @@ pub struct App {
     /// Current status of the app.
     pub config: AppConfig,
 }
+
+pub type IpAddr = String;
+
+/// Address and port of a app.
+#[derive(Debug, Clone, Object)]
+#[oai(read_only_all = true)]
+pub struct SocketAddr {
+    pub ip: IpAddr,
+    pub port: u16,
+}
