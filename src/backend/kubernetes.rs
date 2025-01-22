@@ -62,7 +62,7 @@ impl AppControllerBackend for KubernetesBackend {
                 "app-controller-interaction-model".to_string(),
                 config.interaction_model.to_string(),
             ),
-            ("app-controller-image".to_string(), config.image.to_string()),
+            ("app-controller-images".to_string(), config.images.join(",")),
         ]);
 
         let service = Service {
@@ -132,16 +132,20 @@ impl AppControllerBackend for KubernetesBackend {
                             }),
                             ..Default::default()
                         }]),
-                        containers: vec![Container {
-                            name: name.clone(),
-                            image: Some(config.image.clone()),
-                            env: Some(vec![EnvVar {
-                                name: "DISPLAY".to_string(),
-                                value: Some(":0.0".to_string()),
+                        containers: config
+                            .images
+                            .iter()
+                            .map(|image| Container {
+                                name: image.clone(),
+                                image: Some(image.clone()),
+                                env: Some(vec![EnvVar {
+                                    name: "DISPLAY".to_string(),
+                                    value: Some(":0.0".to_string()),
+                                    ..Default::default()
+                                }]),
                                 ..Default::default()
-                            }]),
-                            ..Default::default()
-                        }],
+                            })
+                            .collect(),
                         ..Default::default()
                     }),
                 },
@@ -240,12 +244,14 @@ impl AppControllerBackend for KubernetesBackend {
                 )?,
             )
             .map_err(|e| BackendError::InternalError(e.to_string()))?,
-            image: annotations
-                .get("app-controller-image")
+            images: annotations
+                .get("app-controller-images")
                 .ok_or(BackendError::InternalError(
-                    "Missing app-controller-image annotation in deployment".to_string(),
-                ))
-                .map(|s| s.to_string())?,
+                    "Missing app-controller-images annotation in deployment".to_string(),
+                ))?
+                .split(',')
+                .map(|s| s.to_string())
+                .collect(),
         };
 
         Ok(App { id, config })
@@ -291,13 +297,15 @@ impl AppControllerBackend for KubernetesBackend {
                         )),
                         )?,
                     )?,
-                    image: annotations
-                        .get("app-controller-image")
+                    images: annotations
+                        .get("app-controller-images")
                         .ok_or(BackendError::InternalError(format!(
-                            "Missing app-controller-image annotation for deployment {}",
+                            "Missing app-controller-images annotation for deployment {}",
                             name
                         )))?
-                        .to_string(),
+                        .split(',')
+                        .map(|s| s.to_string())
+                        .collect(),
                 };
                 Ok::<App, BackendError>(App {
                     id: id.into(),

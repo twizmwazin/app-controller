@@ -20,8 +20,8 @@ pub struct AppConfig {
     pub name: String,
     /// Interaction model to use for the app.
     pub interaction_model: InteractionModel,
-    /// Container image to use for the app.
-    pub image: String,
+    /// Container images to use for the app.
+    pub images: Vec<String>,
 }
 
 /// Status of a app.
