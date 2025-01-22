@@ -259,20 +259,52 @@ impl AppControllerBackend for KubernetesBackend {
             .items
             .into_iter()
             .filter_map(|deployment| {
-                let labels = deployment.metadata.labels?;
+                let id = deployment
+                    .metadata
+                    .labels?
+                    .get("app-controller-id")?
+                    .to_string();
                 let annotations = deployment.metadata.annotations?;
-                let id = labels["app-controller-id"].parse().ok()?;
-                let config = AppConfig {
-                    name: annotations["app-controller-name"].to_string(),
-                    interaction_model: InteractionModel::parse_from_parameter(
-                        &annotations["app-controller-interaction-model"],
-                    )
-                    .ok()?,
-                    image: annotations["app-controller-image"].to_string(),
-                };
-                Some(App { id, config })
+                let name = deployment.metadata.name.clone()?;
+                Some((name, id, annotations))
             })
-            .collect();
+            .map(|(name, id, annotations)| {
+                let id: u32 = id.parse().map_err(|_| {
+                    BackendError::InternalError(format!(
+                        "Invalid app-controller-id label for deployment {}",
+                        name
+                    ))
+                })?;
+                let config = AppConfig {
+                    name: annotations
+                        .get("app-controller-name")
+                        .ok_or(BackendError::InternalError(format!(
+                            "Missing app-controller-name annotation for deployment {}",
+                            name
+                        )))?
+                        .to_string(),
+                    interaction_model: InteractionModel::parse_from_parameter(
+                        annotations.get("app-controller-interaction-model").ok_or(
+                            BackendError::InternalError(format!(
+                            "Missing app-controller-interaction-model annotation for deployment {}",
+                            name
+                        )),
+                        )?,
+                    )?,
+                    image: annotations
+                        .get("app-controller-image")
+                        .ok_or(BackendError::InternalError(format!(
+                            "Missing app-controller-image annotation for deployment {}",
+                            name
+                        )))?
+                        .to_string(),
+                };
+                Ok::<App, BackendError>(App {
+                    id: id.into(),
+                    config,
+                })
+            })
+            .collect::<Result<Vec<App>, BackendError>>()?;
 
         Ok(apps)
     }

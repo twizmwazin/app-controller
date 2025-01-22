@@ -22,3 +22,9 @@ impl From<std::string::FromUtf8Error> for BackendError {
         Self::InternalError(err.to_string())
     }
 }
+
+impl<T: poem_openapi::types::Type> From<poem_openapi::types::ParseError<T>> for BackendError {
+    fn from(err: poem_openapi::types::ParseError<T>) -> Self {
+        Self::InternalError(err.into_message())
+    }
+}
