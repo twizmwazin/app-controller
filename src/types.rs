@@ -23,6 +23,7 @@ pub struct AppConfig {
     /// Container images to use for the app.
     pub images: Vec<String>,
     /// Whether to always pull images from the registry.
+    #[oai(default)]
     pub always_pull_images: bool,
 }
 
