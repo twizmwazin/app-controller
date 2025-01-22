@@ -22,6 +22,8 @@ pub struct AppConfig {
     pub interaction_model: InteractionModel,
     /// Container images to use for the app.
     pub images: Vec<String>,
+    /// Whether to always pull images from the registry.
+    pub always_pull_images: bool,
 }
 
 /// Status of a app.

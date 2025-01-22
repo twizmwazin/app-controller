@@ -45,6 +45,72 @@ impl KubernetesBackend {
 
         Ok(deployment)
     }
+
+    fn make_app_for_deployment(&self, deployment: Deployment) -> Result<App, BackendError> {
+        let name = deployment.metadata.name.unwrap_or("unknown".to_string());
+        let id: u32 = deployment
+            .metadata
+            .labels
+            .ok_or(BackendError::InternalError(format!(
+                "Deployment {} missing labels",
+                name
+            )))?
+            .get("app-controller-id")
+            .ok_or(BackendError::InternalError(format!(
+                "Deployment {} missing app-controller-id",
+                name
+            )))?
+            .parse()
+            .map_err(|_| {
+                BackendError::InternalError(format!(
+                    "Invalid app-controller-id label for deployment {}",
+                    name
+                ))
+            })?;
+
+        let annotations = deployment
+            .metadata
+            .annotations
+            .ok_or(BackendError::InternalError(format!(
+                "Deployment {} missing annotations",
+                name
+            )))?;
+
+        let config = AppConfig {
+            name: annotations
+                .get("app-controller-name")
+                .ok_or(BackendError::InternalError(format!(
+                    "Missing app-controller-name annotation for deployment {}",
+                    name
+                )))?
+                .to_string(),
+            interaction_model: InteractionModel::parse_from_parameter(
+                annotations.get("app-controller-interaction-model").ok_or(
+                    BackendError::InternalError(format!(
+                        "Missing app-controller-interaction-model annotation for deployment {}",
+                        name
+                    )),
+                )?,
+            )?,
+            images: annotations
+                .get("app-controller-images")
+                .ok_or(BackendError::InternalError(format!(
+                    "Missing app-controller-images annotation for deployment {}",
+                    name
+                )))?
+                .split(',')
+                .map(|s| s.to_string())
+                .collect(),
+            always_pull_images: annotations
+                .get("app-controller-always-pull-images")
+                .map(|s| s == "true")
+                .unwrap_or(false),
+        };
+        Ok::<App, BackendError>(App {
+            id: id.into(),
+            config,
+        })
+    }
 }
 
 impl AppControllerBackend for KubernetesBackend {
@@ -63,6 +129,10 @@ impl AppControllerBackend for KubernetesBackend {
                 config.interaction_model.to_string(),
             ),
             ("app-controller-images".to_string(), config.images.join(",")),
+            (
+                "app-controller-always-pull-images".to_string(),
+                config.always_pull_images.to_string(),
+            ),
         ]);
 
         let service = Service {
@@ -148,6 +218,10 @@ impl AppControllerBackend for KubernetesBackend {
                                     value: Some(":0.0".to_string()),
                                     ..Default::default()
                                 }]),
+                                image_pull_policy: Some(match config.always_pull_images {
+                                    true => "Always".to_string(),
+                                    false => "IfNotPresent".to_string(),
+                                }),
                                 ..Default::default()
                             })
                             .collect(),
@@ -228,95 +302,22 @@ impl AppControllerBackend for KubernetesBackend {
     }
 
     async fn get_app(&self, id: AppId) -> Result<App, BackendError> {
-        let deployment = self.get_deployment(id).await?;
-        let annotations = deployment
-            .metadata
-            .annotations
-            .ok_or(BackendError::NotFound)?;
-        let config = AppConfig {
-            name: annotations
-                .get("app-controller-name")
-                .ok_or(BackendError::InternalError(
-                    "Missing app-controller-name annotation in deployment".to_string(),
-                ))?
-                .to_string(),
-            interaction_model: InteractionModel::from_str(
-                annotations.get("app-controller-interaction-model").ok_or(
-                    BackendError::InternalError(
-                        "Missing app-controller-interaction-model annotation in deployment"
-                            .to_string(),
-                    ),
-                )?,
-            )
-            .map_err(|e| BackendError::InternalError(e.to_string()))?,
-            images: annotations
-                .get("app-controller-images")
-                .ok_or(BackendError::InternalError(
-                    "Missing app-controller-images annotation in deployment".to_string(),
-                ))?
-                .split(',')
-                .map(|s| s.to_string())
-                .collect(),
-        };
-
-        Ok(App { id, config })
+        self.make_app_for_deployment(self.get_deployment(id).await?)
     }
 
     async fn get_all_apps(&self) -> Result<Vec<App>, BackendError> {
         let deployment_api: Api<Deployment> = Api::default_namespaced(self.client.clone());
-        let list = deployment_api.list(&Default::default()).await?;
+        let list = deployment_api
+            .list(&ListParams {
+                label_selector: Some("app-controller-id".to_string()),
+                ..Default::default()
+            })
+            .await?;
 
         let apps = list
             .items
             .into_iter()
-            .filter_map(|deployment| {
-                let id = deployment
-                    .metadata
-                    .labels?
-                    .get("app-controller-id")?
-                    .to_string();
-                let annotations = deployment.metadata.annotations?;
-                let name = deployment.metadata.name.clone()?;
-                Some((name, id, annotations))
-            })
-            .map(|(name, id, annotations)| {
-                let id: u32 = id.parse().map_err(|_| {
-                    BackendError::InternalError(format!(
-                        "Invalid app-controller-id label for deployment {}",
-                        name
-                    ))
-                })?;
-                let config = AppConfig {
-                    name: annotations
-                        .get("app-controller-name")
-                        .ok_or(BackendError::InternalError(format!(
-                            "Missing app-controller-name annotation for deployment {}",
-                            name
-                        )))?
-                        .to_string(),
-                    interaction_model: InteractionModel::parse_from_parameter(
-                        annotations.get("app-controller-interaction-model").ok_or(
-                            BackendError::InternalError(format!(
-                            "Missing app-controller-interaction-model annotation for deployment {}",
-                            name
-                        )),
-                        )?,
-                    )?,
-                    images: annotations
-                        .get("app-controller-images")
-                        .ok_or(BackendError::InternalError(format!(
-                            "Missing app-controller-images annotation for deployment {}",
-                            name
-                        )))?
-                        .split(',')
-                        .map(|s| s.to_string())
-                        .collect(),
-                };
-                Ok::<App, BackendError>(App {
-                    id: id.into(),
-                    config,
-                })
-            })
+            .map(|deployment| self.make_app_for_deployment(deployment))
             .collect::<Result<Vec<App>, BackendError>>()?;
 
         Ok(apps)
