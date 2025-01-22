@@ -135,8 +135,13 @@ impl AppControllerBackend for KubernetesBackend {
                         containers: config
                             .images
                             .iter()
-                            .map(|image| Container {
-                                name: image.clone(),
+                            .enumerate()
+                            .map(|(index, image)| Container {
+                                name: format!(
+                                    "{}-{}",
+                                    extract_package(image).unwrap_or("unknown".to_string()),
+                                    index
+                                ),
                                 image: Some(image.clone()),
                                 env: Some(vec![EnvVar {
                                     name: "DISPLAY".to_string(),
@@ -344,4 +349,17 @@ impl AppControllerBackend for KubernetesBackend {
             .map(|ip| (ip, 5911))
             .map_err(|e| BackendError::InternalError(e.to_string()))
     }
+}
+
+fn extract_package(image_name: &str) -> Option<String> {
+    image_name
+        .rsplit('/')
+        .next() // Get the last segment after the last `/`
+        .and_then(|segment| segment.split(':').next()) // Split by `:` and get the part before the tag
+        .map(|package| {
+            package
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .collect::<String>()
+        })
 }
