@@ -1,7 +1,15 @@
 FROM alpine:3.21
 
 # Add packages
-RUN apk add --no-cache sway wayvnc xwayland xhost novnc websockify
+RUN apk add --no-cache \
+    sway \
+    wayvnc \
+    xwayland \
+    xhost \
+    novnc \
+    websockify \
+    mesa-dri-gallium \
+    mesa-va-gallium
 
 # Add application user
 RUN addgroup -S vnc-user && adduser -S vnc-user -G vnc-user
