@@ -360,7 +360,8 @@ fn extract_package(image_name: &str) -> Option<String> {
         .map(|package| {
             package
                 .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .filter(|c| c.is_alphanumeric())
+                .map(|c| c.to_ascii_lowercase())
                 .collect::<String>()
         })
 }
