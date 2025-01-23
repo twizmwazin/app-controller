@@ -1,0 +1,10 @@
+FROM ubuntu:24.04
+
+ADD gazebo.gpg /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
+ADD gazebo.list /etc/apt/sources.list.d/gazebo-stable.list
+
+RUN apt-get update \
+    && apt-get install -y gz-harmonic \
+    && apt-get clean
+
+CMD ["gz", "sim", "shapes.sdf"]

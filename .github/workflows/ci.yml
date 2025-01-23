@@ -50,6 +50,7 @@ jobs:
             { name: "app-controller", path: "." },
             { name: "x11-host", path: "containers/x11-host" },
             { name: "firefox-demo", path: "containers/firefox-demo" },
+            { name: "gazebo-demo", path: "containers/gazebo-demo" },
           ]
     runs-on: ${{ matrix.os }}
     permissions:
