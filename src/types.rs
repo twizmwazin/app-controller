@@ -1,4 +1,4 @@
-use poem_openapi::{Enum, Object};
+use poem_openapi::{types::Example, Enum, Object};
 use strum::{Display, EnumString};
 
 /// Interaction model used by the app. The idea here is to allow different ways
@@ -15,6 +15,7 @@ pub enum InteractionModel {
 }
 
 #[derive(Debug, Clone, Default, Object)]
+#[oai(example)]
 pub struct AppConfig {
     /// Name of the app.
     pub name: String,
@@ -25,6 +26,17 @@ pub struct AppConfig {
     /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
+}
+
+impl Example for AppConfig {
+    fn example() -> Self {
+        Self {
+            name: "firefox-demo".to_string(),
+            interaction_model: InteractionModel::X11,
+            images: vec!["ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string()],
+            always_pull_images: false,
+        }
+    }
 }
 
 /// Status of a app.
