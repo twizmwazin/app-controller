@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-controller
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["*"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-controller
+subjects:
+  - kind: ServiceAccount
+    name: app-controller
+roleRef:
+  kind: Role
+  name: service-account
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-controller
+spec:
+  selector:
+    app: app-controller
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-controller
+  template:
+    metadata:
+      labels:
+        app: app-controller
+    spec:
+      containers:
+        - name: app-controller
+          image: ghcr.io/twizmwazin/app-controller/app-controller:latest
+          ports:
+            - containerPort: 3000
+      serviceAccountName: app-controller
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-controller-ingress
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-controller
+                port:
+                  number: 80
