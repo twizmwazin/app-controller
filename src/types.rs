@@ -1,4 +1,6 @@
 use poem_openapi::{types::Example, Enum, Object};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use strum::{Display, EnumString};
 
 /// Interaction model used by the app. The idea here is to allow different ways
@@ -14,6 +16,47 @@ pub enum InteractionModel {
     X11 = 1,
 }
 
+/// Configuration for a container.
+#[derive(Debug, Clone, Default, Object, Serialize, Deserialize)]
+pub struct ContainerConfig {
+    /// Container image to use.
+    pub image: String,
+    /// Optional configuration data for this container. Limited to 1MB in size.
+    /// If provided, this will be mounted into the container and the AC_CONTAINER_CONFIG
+    /// environment variable will be set pointing to the mount location.
+    #[oai(default)]
+    pub config: Option<String>,
+}
+
+/// Internal representation of a container specification that supports both simple image names
+/// and full container configs. This is used for processing but not directly exposed in the API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ContainerSpec {
+    /// Just an image name (backward compatibility).
+    Image(String),
+    /// Full container configuration.
+    Config(ContainerConfig),
+}
+
+impl ContainerSpec {
+    /// Get the image name from this container spec
+    pub fn image(&self) -> &str {
+        match self {
+            ContainerSpec::Image(image) => image,
+            ContainerSpec::Config(config) => &config.image,
+        }
+    }
+
+    /// Get the config from this container spec, if any
+    pub fn config(&self) -> Option<&str> {
+        match self {
+            ContainerSpec::Image(_) => None,
+            ContainerSpec::Config(config) => config.config.as_deref(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Object)]
 #[oai(example)]
 pub struct AppConfig {
@@ -21,16 +64,52 @@ pub struct AppConfig {
     pub name: String,
     /// Interaction model to use for the app.
     pub interaction_model: InteractionModel,
-    /// Container images to use for the app.
+    /// Container images to use for the app (simple format).
+    /// Use either this field or 'containers', not both.
+    #[oai(default)]
     pub images: Vec<String>,
+    /// Container configurations (advanced format).
+    /// Use either this field or 'images', not both.
+    #[oai(default)]
+    pub containers: Vec<ContainerConfig>,
     /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
-    /// Optional configuration data for the app. Limited to 1MB in size.
-    /// If provided, this will be mounted into all containers and the AC_APP_CONFIG
-    /// environment variable will be set pointing to the mount location.
-    #[oai(default)]
-    pub app_config: Option<String>,
+}
+
+impl AppConfig {
+    /// Get the containers for this app, converting from the API representation
+    /// to the internal ContainerSpec representation.
+    pub fn get_containers(&self) -> Vec<ContainerSpec> {
+        // If containers is provided, use that
+        if !self.containers.is_empty() {
+            return self
+                .containers
+                .iter()
+                .map(|c| ContainerSpec::Config(c.clone()))
+                .collect();
+        }
+
+        // Otherwise, use images (convert to container specs)
+        self.images
+            .iter()
+            .map(|i| ContainerSpec::Image(i.clone()))
+            .collect()
+    }
+
+    /// Get container configs as a map from container index to config
+    pub fn get_container_configs(&self) -> BTreeMap<usize, String> {
+        let mut configs = BTreeMap::new();
+
+        // Add container-specific configs
+        for (i, container) in self.get_containers().iter().enumerate() {
+            if let Some(config) = container.config() {
+                configs.insert(i, config.to_string());
+            }
+        }
+
+        configs
+    }
 }
 
 impl Example for AppConfig {
@@ -38,9 +117,12 @@ impl Example for AppConfig {
         Self {
             name: "firefox-demo".to_string(),
             interaction_model: InteractionModel::X11,
-            images: vec!["ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string()],
+            images: Vec::new(),
+            containers: vec![ContainerConfig {
+                image: "ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string(),
+                config: Some("Container-specific configuration".to_string()),
+            }],
             always_pull_images: false,
-            app_config: Some("# Sample configuration\nkey1: value1\nkey2: value2".to_string()),
         }
     }
 }

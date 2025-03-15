@@ -2,7 +2,7 @@ use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
-    types::{App, AppConfig, AppId, AppStatus, SocketAddr},
+    types::{App, AppConfig, AppId, AppStatus, ContainerConfig, SocketAddr},
 };
 
 pub struct Api<B: AppControllerBackend + 'static>(B);
@@ -105,17 +105,51 @@ enum GetAppAddrResponse {
 impl<B: AppControllerBackend> Api<B> {
     /// Create new app
     ///
-    /// If app_config is provided, it must be less than 1MB in size.
+    /// Provide either 'images' (simple format) or 'containers' (advanced format), not both.
+    /// If 'images' is provided, default container configurations will be created.
+    /// If 'containers' is provided, those configurations will be used directly.
+    /// Each container's config must be less than 1MB in size.
     #[oai(path = "/app", method = "post")]
     async fn create_app(&self, config: Json<AppConfig>) -> CreateAppResponse {
-        // Check if app_config is too large (1MB = 1048576 bytes)
-        if let Some(app_config) = &config.0.app_config {
-            if app_config.len() > 1048576 {
-                return CreateAppResponse::ConfigTooLarge;
+
+        // Check if any container config is too large (1MB = 1048576 bytes)
+        for container_config in &config.0.containers {
+            if let Some(config) = &container_config.config {
+                if config.len() > 1048576 {
+                    return CreateAppResponse::ConfigTooLarge;
+                }
             }
         }
 
-        match self.0.create_app(config.0).await {
+        // Validate that either images or containers is provided, not both
+        if !config.0.images.is_empty() && !config.0.containers.is_empty() {
+            return CreateAppResponse::InternalError(Json(
+                "Provide either 'images' or 'containers', not both".to_string(),
+            ));
+        }
+
+        // Validate that at least one container is specified
+        if config.0.images.is_empty() && config.0.containers.is_empty() {
+            return CreateAppResponse::InternalError(Json(
+                "At least one container must be specified".to_string(),
+            ));
+        }
+
+        // Normalize the config by converting images to containers if needed
+        let mut normalized_config = config.0.clone();
+        if !normalized_config.images.is_empty() {
+            // Convert images to containers
+            for image in &normalized_config.images {
+                normalized_config.containers.push(ContainerConfig {
+                    image: image.clone(),
+                    config: None,
+                });
+            }
+            // Clear the images field
+            normalized_config.images.clear();
+        }
+
+        match self.0.create_app(normalized_config).await {
             Ok(app) => CreateAppResponse::Ok(Json(app)),
             Err(err) => CreateAppResponse::InternalError(Json(err.to_string())),
         }
