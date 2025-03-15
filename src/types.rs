@@ -26,6 +26,11 @@ pub struct AppConfig {
     /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
+    /// Optional configuration data for the app. Limited to 1MB in size.
+    /// If provided, this will be mounted into all containers and the AC_APP_CONFIG
+    /// environment variable will be set pointing to the mount location.
+    #[oai(default)]
+    pub app_config: Option<String>,
 }
 
 impl Example for AppConfig {
@@ -35,6 +40,7 @@ impl Example for AppConfig {
             interaction_model: InteractionModel::X11,
             images: vec!["ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string()],
             always_pull_images: false,
+            app_config: Some("# Sample configuration\nkey1: value1\nkey2: value2".to_string()),
         }
     }
 }

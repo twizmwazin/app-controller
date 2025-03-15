@@ -18,6 +18,9 @@ enum CreateAppResponse {
     /// The app was created successfully.
     #[oai(status = 200)]
     Ok(Json<App>),
+    /// The app config is too large. Maximum size is 1MB.
+    #[oai(status = 413)]
+    ConfigTooLarge,
     /// The app could not be created because of an internal error.
     #[oai(status = 500)]
     InternalError(Json<String>),
@@ -101,8 +104,17 @@ enum GetAppAddrResponse {
 #[OpenApi]
 impl<B: AppControllerBackend> Api<B> {
     /// Create new app
+    ///
+    /// If app_config is provided, it must be less than 1MB in size.
     #[oai(path = "/app", method = "post")]
     async fn create_app(&self, config: Json<AppConfig>) -> CreateAppResponse {
+        // Check if app_config is too large (1MB = 1048576 bytes)
+        if let Some(app_config) = &config.0.app_config {
+            if app_config.len() > 1048576 {
+                return CreateAppResponse::ConfigTooLarge;
+            }
+        }
+
         match self.0.create_app(config.0).await {
             Ok(app) => CreateAppResponse::Ok(Json(app)),
             Err(err) => CreateAppResponse::InternalError(Json(err.to_string())),
