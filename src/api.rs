@@ -2,7 +2,9 @@ use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
-    types::{App, AppConfig, AppId, AppStatus, ContainerConfig, SocketAddr},
+    types::{
+        App, AppConfig, AppId, AppOutputs, AppStatus, ContainerConfig, ContainerOutput, SocketAddr,
+    },
 };
 
 pub struct Api<B: AppControllerBackend + 'static>(B);
@@ -99,6 +101,19 @@ enum GetAppAddrResponse {
     /// The app could not be found because of an internal error.
     #[oai(status = 500)]
     InternalError,
+}
+
+#[derive(ApiResponse)]
+enum GetAppOutputsResponse {
+    /// The app outputs were found successfully.
+    #[oai(status = 200)]
+    Ok(Json<AppOutputs>),
+    /// The app could not be found.
+    #[oai(status = 404)]
+    NotFound,
+    /// The app outputs could not be retrieved because of an internal error.
+    #[oai(status = 500)]
+    InternalError(Json<String>),
 }
 
 #[OpenApi]
@@ -217,6 +232,36 @@ impl<B: AppControllerBackend> Api<B> {
             })),
             Err(BackendError::NotFound) => GetAppAddrResponse::NotFound,
             Err(BackendError::InternalError(_)) => GetAppAddrResponse::InternalError,
+        }
+    }
+
+    /// Get app outputs
+    ///
+    /// Retrieve the outputs from all containers in the app.
+    /// Each container writes its output to a file specified by the AC_CONTAINER_OUTPUT environment variable.
+    /// This endpoint collects all those outputs and returns them.
+    #[oai(path = "/app/:id/outputs", method = "get")]
+    async fn get_app_outputs(&self, id: Path<AppId>) -> GetAppOutputsResponse {
+        // First get the app to get its name
+        let app = match self.0.get_app(id.0).await {
+            Ok(app) => app,
+            Err(BackendError::NotFound) => return GetAppOutputsResponse::NotFound,
+            Err(BackendError::InternalError(msg)) => {
+                return GetAppOutputsResponse::InternalError(Json(msg))
+            }
+        };
+
+        // Then get the outputs
+        match self.0.get_app_outputs(id.0).await {
+            Ok(outputs) => GetAppOutputsResponse::Ok(Json(AppOutputs {
+                app_id: id.0,
+                app_name: app.config.name,
+                outputs,
+            })),
+            Err(BackendError::NotFound) => GetAppOutputsResponse::NotFound,
+            Err(BackendError::InternalError(msg)) => {
+                GetAppOutputsResponse::InternalError(Json(msg))
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::{AppControllerBackend, BackendError};
-use crate::types::{App, AppConfig, AppId, AppStatus};
+use crate::types::{App, AppConfig, AppId, AppStatus, ContainerOutput};
 
 #[derive(Default)]
 pub struct MockBackend {
@@ -84,5 +84,28 @@ impl AppControllerBackend for MockBackend {
 
     async fn get_app_addr(&self, _id: AppId) -> Result<(IpAddr, u16), BackendError> {
         todo!()
+    }
+
+    async fn get_app_outputs(&self, id: AppId) -> Result<Vec<ContainerOutput>, BackendError> {
+        // Check if the app exists
+        let app = self.get_app(id).await?;
+
+        // For the mock backend, we'll just return placeholder outputs
+        let mut outputs = Vec::new();
+
+        // Create a mock output for each container in the app
+        for (index, container) in app.config.get_containers().iter().enumerate() {
+            outputs.push(ContainerOutput {
+                container_index: index,
+                container_name: format!("container-{}", index),
+                output: format!(
+                    "Mock output for container {} ({})",
+                    index,
+                    container.image()
+                ),
+            });
+        }
+
+        Ok(outputs)
     }
 }

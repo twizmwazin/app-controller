@@ -10,7 +10,7 @@ pub use mock::MockBackend;
 
 use std::{future::Future, net::IpAddr};
 
-use crate::types::{App, AppConfig, AppId, AppStatus};
+use crate::types::{App, AppConfig, AppId, AppStatus, ContainerOutput};
 
 /// Backend trait for the app controller.
 pub trait AppControllerBackend: Send + Sync {
@@ -40,4 +40,10 @@ pub trait AppControllerBackend: Send + Sync {
         &self,
         id: AppId,
     ) -> impl Future<Output = Result<(IpAddr, u16), BackendError>> + Send;
+
+    /// Get the outputs from all containers in the app with the given ID.
+    fn get_app_outputs(
+        &self,
+        id: AppId,
+    ) -> impl Future<Output = Result<Vec<ContainerOutput>, BackendError>> + Send;
 }

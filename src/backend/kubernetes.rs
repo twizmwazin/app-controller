@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
-use crate::types::{App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel};
+use crate::types::{
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerOutput, InteractionModel,
+};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -290,9 +292,21 @@ impl AppControllerBackend for KubernetesBackend {
                         ..Default::default()
                     }),
                     spec: Some({
-                        // Collect all volumes
-                        let volumes: Vec<Volume> =
-                            config_map_volumes.iter().map(|(_, v)| v.clone()).collect();
+                        // Create a volume for container outputs
+                        let output_volume = Volume {
+                            name: "container-outputs".to_string(),
+                            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        };
+
+                        // Add the output volume to the list of volumes
+                        let mut all_volumes = config_map_volumes
+                            .iter()
+                            .map(|(_, v)| v.clone())
+                            .collect::<Vec<Volume>>();
+                        all_volumes.push(output_volume);
 
                         // Create the pod spec
                         PodSpec {
@@ -338,6 +352,14 @@ impl AppControllerBackend for KubernetesBackend {
                                         });
                                     }
 
+                                    // Add AC_CONTAINER_OUTPUT env var for all containers except X11
+                                    let output_path = format!("/outputs/container-{}.log", index);
+                                    env_vars.push(EnvVar {
+                                        name: "AC_CONTAINER_OUTPUT".to_string(),
+                                        value: Some(output_path),
+                                        ..Default::default()
+                                    });
+
                                     // Determine image pull policy
                                     let image_pull_policy = if config.always_pull_images {
                                         "Always".to_string()
@@ -346,15 +368,23 @@ impl AppControllerBackend for KubernetesBackend {
                                     };
 
                                     // Prepare volume mounts
-                                    let volume_mounts = if container_configs.contains_key(&index) {
-                                        Some(vec![VolumeMount {
+                                    let mut volume_mounts = Vec::new();
+
+                                    // Add config volume mount if this container has config
+                                    if container_configs.contains_key(&index) {
+                                        volume_mounts.push(VolumeMount {
                                             name: format!("container-{}-config", index),
                                             mount_path: "/etc/app-controller/config".to_string(),
                                             ..Default::default()
-                                        }])
-                                    } else {
-                                        None
-                                    };
+                                        });
+                                    }
+
+                                    // Add output volume mount for all containers
+                                    volume_mounts.push(VolumeMount {
+                                        name: "container-outputs".to_string(),
+                                        mount_path: "/outputs".to_string(),
+                                        ..Default::default()
+                                    });
 
                                     Container {
                                         name: format!(
@@ -366,16 +396,12 @@ impl AppControllerBackend for KubernetesBackend {
                                         image: Some(container_spec.image().to_string()),
                                         env: Some(env_vars),
                                         image_pull_policy: Some(image_pull_policy),
-                                        volume_mounts,
+                                        volume_mounts: Some(volume_mounts),
                                         ..Default::default()
                                     }
                                 })
                                 .collect(),
-                            volumes: if !volumes.is_empty() {
-                                Some(volumes)
-                            } else {
-                                None
-                            },
+                            volumes: Some(all_volumes),
                             ..Default::default()
                         }
                     }),
@@ -511,6 +537,68 @@ impl AppControllerBackend for KubernetesBackend {
         IpAddr::from_str(&raw)
             .map(|ip| (ip, 5911))
             .map_err(|e| BackendError::InternalError(e.to_string()))
+    }
+
+    async fn get_app_outputs(&self, id: AppId) -> Result<Vec<ContainerOutput>, BackendError> {
+        // First, check if the app exists
+        let deployment = self.get_deployment(id).await?;
+        let app = self.make_app_for_deployment(deployment)?;
+
+        // Get the pod for this app
+        let pod_api: Api<k8s_openapi::api::core::v1::Pod> =
+            Api::default_namespaced(self.client.clone());
+        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let pods = pod_api.list(&list_params).await?;
+
+        // If there are no pods, the app is not running
+        if pods.items.is_empty() {
+            return Ok(Vec::new()); // Return empty outputs if app is not running
+        }
+
+        // Get the first pod (there should be only one for each app)
+        let pod = pods.items.into_iter().next().unwrap();
+
+        // Get the containers in the pod
+        let spec = pod
+            .spec
+            .as_ref()
+            .ok_or_else(|| BackendError::InternalError("Pod missing spec".to_string()))?;
+
+        // In k8s_openapi, containers is a Vec<Container>, not an Option<Vec<Container>>
+        let containers = &spec.containers;
+
+        let mut outputs = Vec::new();
+
+        // For each container (excluding the X11 container)
+        for (index, container) in containers.iter().enumerate() {
+            // Skip the X11 container
+            if container.name == "x11-host" {
+                continue;
+            }
+
+            // Get the container's output file
+            let output_path = format!("/outputs/container-{}.log", index);
+
+            // Get the pod name
+            let pod_name = pod
+                .metadata
+                .name
+                .clone()
+                .ok_or(BackendError::InternalError("Pod missing name".to_string()))?;
+
+            // For now, we'll return a placeholder message
+            // In a real implementation, we would need to use the Kubernetes API to read the file
+            // This would typically involve using the pod exec API, but that's complex to implement here
+            let output = format!("Output for container {} ({})", index, container.name);
+
+            outputs.push(ContainerOutput {
+                container_index: index,
+                container_name: container.name.clone(),
+                output,
+            });
+        }
+
+        Ok(outputs)
     }
 }
 

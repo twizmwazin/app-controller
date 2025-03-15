@@ -158,3 +158,27 @@ pub struct SocketAddr {
     pub ip: IpAddr,
     pub port: u16,
 }
+
+/// Output from a single container in an app.
+#[derive(Debug, Clone, Object)]
+#[oai(read_only_all = true)]
+pub struct ContainerOutput {
+    /// Index of the container in the app's container list.
+    pub container_index: usize,
+    /// Name of the container.
+    pub container_name: String,
+    /// Output content from the container.
+    pub output: String,
+}
+
+/// Collection of outputs from all containers in an app.
+#[derive(Debug, Clone, Object)]
+#[oai(read_only_all = true)]
+pub struct AppOutputs {
+    /// ID of the app.
+    pub app_id: AppId,
+    /// Name of the app.
+    pub app_name: String,
+    /// Outputs from each container in the app.
+    pub outputs: Vec<ContainerOutput>,
+}
