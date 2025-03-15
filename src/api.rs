@@ -111,7 +111,6 @@ impl<B: AppControllerBackend> Api<B> {
     /// Each container's config must be less than 1MB in size.
     #[oai(path = "/app", method = "post")]
     async fn create_app(&self, config: Json<AppConfig>) -> CreateAppResponse {
-
         // Check if any container config is too large (1MB = 1048576 bytes)
         for container_config in &config.0.containers {
             if let Some(config) = &container_config.config {

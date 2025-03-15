@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
-use crate::types::{
-    App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel,
-};
+use crate::types::{App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -204,7 +202,6 @@ impl AppControllerBackend for KubernetesBackend {
                     config.to_string(),
                 );
             }
-
         }
 
         // Get container configs as a map from container index to config
