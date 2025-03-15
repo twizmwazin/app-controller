@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
-use crate::types::{App, AppConfig, AppId, AppStatus, InteractionModel};
+use crate::types::{App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, SecurityContext, Service,
-            ServicePort, ServiceSpec,
+            ConfigMap, Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, SecurityContext,
+            Service, ServicePort, ServiceSpec, Volume, VolumeMount,
         },
     },
     apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -21,6 +21,41 @@ use super::{AppControllerBackend, BackendError};
 
 static X11_HOST_IMAGE: &str = "ghcr.io/twizmwazin/app-controller/x11-host";
 
+/// KubernetesBackend implements the app controller backend using Kubernetes resources.
+///
+/// # Kubernetes Resources
+///
+/// Each app is represented by the following Kubernetes resources:
+///
+/// - A Kubernetes Deployment: Contains the main application containers and initialization
+///   containers. The deployment has zero replicas when the app is stopped and one
+///   replica when the app is running.
+///
+/// - A Kubernetes Service: Provides network access to the app, exposing ports for
+///   VNC (5910) and VNC WebSocket (5911) connections.
+///
+/// - Kubernetes ConfigMaps: Created for containers with configuration data.
+///   Stores the container configuration that's mounted into the specific container.
+///
+/// # Data Storage
+///
+/// App data is stored in Kubernetes as follows:
+///
+/// ## Labels:
+/// - `app-controller-id`: Uniquely identifies the app resources (random 32-bit integer)
+///
+/// ## Annotations:
+/// - `app-controller-name`: The app name
+/// - `app-controller-interaction-model`: The app's interaction model
+/// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy
+/// - `app-controller-container-{index}-image`: Image for container at index
+/// - `app-controller-container-{index}-config`: Config for container at index (if any)
+/// - `app-controller-container-{index}-always-pull`: Always pull setting for container at index
+///
+/// ## App State:
+/// - App state (running/stopped) is represented by the deployment's replica count:
+///   - 0 replicas = stopped
+///   - 1 replica = running
 pub struct KubernetesBackend {
     client: Client,
 }
@@ -30,6 +65,10 @@ impl KubernetesBackend {
         Self { client }
     }
 
+    /// Retrieves a Kubernetes Deployment by app ID.
+    ///
+    /// This method finds the deployment by filtering on the `app-controller-id` label.
+    /// Returns BackendError::NotFound if no deployment exists with the given ID.
     async fn get_deployment(&self, id: AppId) -> Result<Deployment, BackendError> {
         let deployment_api: Api<Deployment> = Api::default_namespaced(self.client.clone());
         // Find the deployment with the correct app-controller-id label
@@ -46,6 +85,9 @@ impl KubernetesBackend {
         Ok(deployment)
     }
 
+    /// Converts a Kubernetes Deployment into an App object.
+    ///
+    /// Extracts app information from the deployment's labels and annotations.
     fn make_app_for_deployment(&self, deployment: Deployment) -> Result<App, BackendError> {
         let name = deployment.metadata.name.unwrap_or("unknown".to_string());
         let id: u32 = deployment
@@ -76,7 +118,8 @@ impl KubernetesBackend {
                 name
             )))?;
 
-        let config = AppConfig {
+        // Get the basic app config
+        let mut config = AppConfig {
             name: annotations
                 .get("app-controller-name")
                 .ok_or(BackendError::InternalError(format!(
@@ -92,20 +135,29 @@ impl KubernetesBackend {
                     )),
                 )?,
             )?,
-            images: annotations
-                .get("app-controller-images")
-                .ok_or(BackendError::InternalError(format!(
-                    "Missing app-controller-images annotation for deployment {}",
-                    name
-                )))?
-                .split(',')
-                .map(|s| s.to_string())
-                .collect(),
+            images: Vec::new(),
+            containers: Vec::new(),
             always_pull_images: annotations
                 .get("app-controller-always-pull-images")
                 .map(|s| s == "true")
                 .unwrap_or(false),
         };
+
+        // Look for container-specific annotations
+        let mut index = 0;
+        while let Some(image) =
+            annotations.get(&format!("app-controller-container-{}-image", index))
+        {
+            let container_config = ContainerConfig {
+                image: image.to_string(),
+                config: annotations
+                    .get(&format!("app-controller-container-{}-config", index))
+                    .map(|s| s.to_string()),
+            };
+            config.containers.push(container_config);
+            index += 1;
+        }
+
         Ok::<App, BackendError>(App {
             id: id.into(),
             config,
@@ -115,25 +167,81 @@ impl KubernetesBackend {
 
 impl AppControllerBackend for KubernetesBackend {
     async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
-        // To creat an app, we need a service and a deployment. The deployment
+        // To create an app, we need a service and a deployment. The deployment
         // should have zero replicas initially.
 
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
 
         let labels = BTreeMap::from([("app-controller-id".to_string(), format!("{}", unique_id))]);
-        let annotations = BTreeMap::from([
+        let mut annotations = BTreeMap::from([
             ("app-controller-name".to_string(), config.name.clone()),
             (
                 "app-controller-interaction-model".to_string(),
                 config.interaction_model.to_string(),
             ),
-            ("app-controller-images".to_string(), config.images.join(",")),
             (
                 "app-controller-always-pull-images".to_string(),
                 config.always_pull_images.to_string(),
             ),
         ]);
+
+        // Get the containers for this app
+        let containers = config.get_containers();
+
+        // Add container-specific annotations
+        for (i, container) in containers.iter().enumerate() {
+            annotations.insert(
+                format!("app-controller-container-{}-image", i),
+                container.image().to_string(),
+            );
+
+            if let Some(config) = container.config() {
+                annotations.insert(
+                    format!("app-controller-container-{}-config", i),
+                    config.to_string(),
+                );
+            }
+        }
+
+        // Get container configs as a map from container index to config
+        let container_configs = config.get_container_configs();
+
+        // Create ConfigMaps for container configs
+        let mut config_map_volumes = Vec::new();
+        for (index, config_data) in &container_configs {
+            let config_map_name = format!("{}-container-{}-config", name, index);
+            let config_map = ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(config_map_name.clone()),
+                    labels: Some(labels.clone()),
+                    ..Default::default()
+                },
+                data: Some(BTreeMap::from([(
+                    "config".to_string(),
+                    config_data.clone(),
+                )])),
+                ..Default::default()
+            };
+
+            let config_map_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
+            config_map_api
+                .create(&Default::default(), &config_map)
+                .await?;
+
+            // Add volume for this config map
+            config_map_volumes.push((
+                *index,
+                Volume {
+                    name: format!("container-{}-config", index),
+                    config_map: Some(k8s_openapi::api::core::v1::ConfigMapVolumeSource {
+                        name: config_map_name,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ));
+        }
 
         let service = Service {
             metadata: ObjectMeta {
@@ -181,51 +289,95 @@ impl AppControllerBackend for KubernetesBackend {
                         labels: Some(labels.clone()),
                         ..Default::default()
                     }),
-                    spec: Some(PodSpec {
-                        init_containers: Some(vec![Container {
-                            name: "x11-host".to_string(),
-                            image: Some(X11_HOST_IMAGE.to_string()),
-                            ports: Some(vec![
-                                ContainerPort {
-                                    container_port: 5910,
+                    spec: Some({
+                        // Collect all volumes
+                        let volumes: Vec<Volume> =
+                            config_map_volumes.iter().map(|(_, v)| v.clone()).collect();
+
+                        // Create the pod spec
+                        PodSpec {
+                            init_containers: Some(vec![Container {
+                                name: "x11-host".to_string(),
+                                image: Some(X11_HOST_IMAGE.to_string()),
+                                ports: Some(vec![
+                                    ContainerPort {
+                                        container_port: 5910,
+                                        ..Default::default()
+                                    },
+                                    ContainerPort {
+                                        container_port: 5911,
+                                        ..Default::default()
+                                    },
+                                ]),
+                                restart_policy: Some("Always".to_string()),
+                                security_context: Some(SecurityContext {
+                                    privileged: Some(true),
                                     ..Default::default()
-                                },
-                                ContainerPort {
-                                    container_port: 5911,
-                                    ..Default::default()
-                                },
-                            ]),
-                            restart_policy: Some("Always".to_string()),
-                            security_context: Some(SecurityContext {
-                                privileged: Some(true),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        }]),
-                        containers: config
-                            .images
-                            .iter()
-                            .enumerate()
-                            .map(|(index, image)| Container {
-                                name: format!(
-                                    "{}-{}",
-                                    extract_package(image).unwrap_or("unknown".to_string()),
-                                    index
-                                ),
-                                image: Some(image.clone()),
-                                env: Some(vec![EnvVar {
-                                    name: "DISPLAY".to_string(),
-                                    value: Some(":0.0".to_string()),
-                                    ..Default::default()
-                                }]),
-                                image_pull_policy: Some(match config.always_pull_images {
-                                    true => "Always".to_string(),
-                                    false => "IfNotPresent".to_string(),
                                 }),
                                 ..Default::default()
-                            })
-                            .collect(),
-                        ..Default::default()
+                            }]),
+                            containers: containers
+                                .iter()
+                                .enumerate()
+                                .map(|(index, container_spec)| {
+                                    // Prepare environment variables
+                                    let mut env_vars = vec![EnvVar {
+                                        name: "DISPLAY".to_string(),
+                                        value: Some(":0.0".to_string()),
+                                        ..Default::default()
+                                    }];
+
+                                    // Add AC_CONTAINER_CONFIG env var if this container has config
+                                    if container_configs.contains_key(&index) {
+                                        env_vars.push(EnvVar {
+                                            name: "AC_CONTAINER_CONFIG".to_string(),
+                                            value: Some(
+                                                "/etc/app-controller/config/config".to_string(),
+                                            ),
+                                            ..Default::default()
+                                        });
+                                    }
+
+                                    // Determine image pull policy
+                                    let image_pull_policy = if config.always_pull_images {
+                                        "Always".to_string()
+                                    } else {
+                                        "IfNotPresent".to_string()
+                                    };
+
+                                    // Prepare volume mounts
+                                    let volume_mounts = if container_configs.contains_key(&index) {
+                                        Some(vec![VolumeMount {
+                                            name: format!("container-{}-config", index),
+                                            mount_path: "/etc/app-controller/config".to_string(),
+                                            ..Default::default()
+                                        }])
+                                    } else {
+                                        None
+                                    };
+
+                                    Container {
+                                        name: format!(
+                                            "{}-{}",
+                                            extract_package(container_spec.image())
+                                                .unwrap_or("unknown".to_string()),
+                                            index
+                                        ),
+                                        image: Some(container_spec.image().to_string()),
+                                        env: Some(env_vars),
+                                        image_pull_policy: Some(image_pull_policy),
+                                        volume_mounts,
+                                        ..Default::default()
+                                    }
+                                })
+                                .collect(),
+                            volumes: if !volumes.is_empty() {
+                                Some(volumes)
+                            } else {
+                                None
+                            },
+                            ..Default::default()
+                        }
                     }),
                 },
                 ..Default::default()
@@ -294,6 +446,16 @@ impl AppControllerBackend for KubernetesBackend {
         let name = deployment.metadata.name.ok_or(BackendError::NotFound)?;
         let service_api: Api<Service> = Api::default_namespaced(self.client.clone());
         let deployment_api: Api<Deployment> = Api::default_namespaced(self.client.clone());
+        let config_map_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
+
+        // Delete all resources with the app-controller-id label
+        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let config_maps = config_map_api.list(&list_params).await?;
+        for config_map in config_maps.items {
+            if let Some(name) = config_map.metadata.name {
+                config_map_api.delete(&name, &Default::default()).await?;
+            }
+        }
 
         service_api.delete(&name, &Default::default()).await?;
         deployment_api.delete(&name, &Default::default()).await?;

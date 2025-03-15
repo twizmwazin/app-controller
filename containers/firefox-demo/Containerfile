@@ -3,4 +3,10 @@ FROM alpine:3.21
 RUN apk add --no-cache firefox
 RUN apk add --no-cache font-noto
 
-CMD ["firefox"]
+CMD ["sh", "-c", "\
+    if [ -n \"$AC_CONTAINER_CONFIG\" ] && [ -f \"$AC_CONTAINER_CONFIG\" ]; then \
+        firefox \"$(cat $AC_CONTAINER_CONFIG)\"; \
+    else \
+        firefox; \
+    fi \
+"]
