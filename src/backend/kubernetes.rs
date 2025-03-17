@@ -50,6 +50,7 @@ static DOCKER_DIND_IMAGE: &str = "docker:dind";
 /// - `app-controller-interaction-model`: The app's interaction model
 /// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy
 /// - `app-controller-enable-docker`: "true" or "false" to control Docker sidecar availability
+/// - `app-controller-autostart`: "true" or "false" to control whether the app starts automatically upon creation
 /// - `app-controller-container-{index}-image`: Image for container at index
 /// - `app-controller-container-{index}-config`: Config for container at index (if any)
 /// - `app-controller-container-{index}-always-pull`: Always pull setting for container at index
@@ -147,6 +148,10 @@ impl KubernetesBackend {
                 .get("app-controller-enable-docker")
                 .map(|s| s == "true")
                 .unwrap_or(false),
+            autostart: annotations
+                .get("app-controller-autostart")
+                .map(|s| s == "true")
+                .unwrap_or(false),
         };
 
         // Look for container-specific annotations
@@ -173,8 +178,8 @@ impl KubernetesBackend {
 
 impl AppControllerBackend for KubernetesBackend {
     async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
-        // To create an app, we need a service and a deployment. The deployment
-        // should have zero replicas initially.
+        // To create an app, we need a service and a deployment. The deployment's
+        // initial replica count is determined by the autostart parameter.
 
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
@@ -193,6 +198,10 @@ impl AppControllerBackend for KubernetesBackend {
             (
                 "app-controller-enable-docker".to_string(),
                 config.enable_docker.to_string(),
+            ),
+            (
+                "app-controller-autostart".to_string(),
+                config.autostart.to_string(),
             ),
         ]);
 
@@ -289,7 +298,7 @@ impl AppControllerBackend for KubernetesBackend {
                 ..Default::default()
             },
             spec: Some(DeploymentSpec {
-                replicas: Some(0),
+                replicas: Some(if config.autostart { 1 } else { 0 }),
                 selector: LabelSelector {
                     match_labels: Some(labels.clone()),
                     ..Default::default()

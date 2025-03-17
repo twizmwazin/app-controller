@@ -32,7 +32,11 @@ impl AppControllerBackend for MockBackend {
         self.statuses
             .write()
             .unwrap()
-            .insert(id, AppStatus::Stopped);
+            .insert(id, if app.config.autostart {
+                AppStatus::Running
+            } else {
+                AppStatus::Stopped
+            });
 
         Ok(app)
     }
