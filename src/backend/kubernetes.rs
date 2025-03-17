@@ -5,11 +5,11 @@ use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            ConfigMap, Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, SecurityContext,
-            Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+            ConfigMap, Container, ContainerPort, EnvVar, HTTPGetAction, PodSpec, PodTemplateSpec,
+            Probe, SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
         },
     },
-    apimachinery::pkg::apis::meta::v1::LabelSelector,
+    apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
 };
 use kube::{
     api::{ListParams, ObjectMeta, Patch},
@@ -20,6 +20,7 @@ use poem_openapi::types::ParseFromParameter;
 use super::{AppControllerBackend, BackendError};
 
 static X11_HOST_IMAGE: &str = "ghcr.io/twizmwazin/app-controller/x11-host";
+static DOCKER_DIND_IMAGE: &str = "docker:dind";
 
 /// KubernetesBackend implements the app controller backend using Kubernetes resources.
 ///
@@ -48,6 +49,7 @@ static X11_HOST_IMAGE: &str = "ghcr.io/twizmwazin/app-controller/x11-host";
 /// - `app-controller-name`: The app name
 /// - `app-controller-interaction-model`: The app's interaction model
 /// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy
+/// - `app-controller-enable-docker`: "true" or "false" to control Docker sidecar availability
 /// - `app-controller-container-{index}-image`: Image for container at index
 /// - `app-controller-container-{index}-config`: Config for container at index (if any)
 /// - `app-controller-container-{index}-always-pull`: Always pull setting for container at index
@@ -141,6 +143,10 @@ impl KubernetesBackend {
                 .get("app-controller-always-pull-images")
                 .map(|s| s == "true")
                 .unwrap_or(false),
+            enable_docker: annotations
+                .get("app-controller-enable-docker")
+                .map(|s| s == "true")
+                .unwrap_or(false),
         };
 
         // Look for container-specific annotations
@@ -183,6 +189,10 @@ impl AppControllerBackend for KubernetesBackend {
             (
                 "app-controller-always-pull-images".to_string(),
                 config.always_pull_images.to_string(),
+            ),
+            (
+                "app-controller-enable-docker".to_string(),
+                config.enable_docker.to_string(),
             ),
         ]);
 
@@ -296,26 +306,57 @@ impl AppControllerBackend for KubernetesBackend {
 
                         // Create the pod spec
                         PodSpec {
-                            init_containers: Some(vec![Container {
-                                name: "x11-host".to_string(),
-                                image: Some(X11_HOST_IMAGE.to_string()),
-                                ports: Some(vec![
-                                    ContainerPort {
-                                        container_port: 5910,
+                            init_containers: Some({
+                                let mut init_containers = vec![Container {
+                                    name: "x11-host".to_string(),
+                                    image: Some(X11_HOST_IMAGE.to_string()),
+                                    ports: Some(vec![
+                                        ContainerPort {
+                                            container_port: 5910,
+                                            ..Default::default()
+                                        },
+                                        ContainerPort {
+                                            container_port: 5911,
+                                            ..Default::default()
+                                        },
+                                    ]),
+                                    restart_policy: Some("Always".to_string()),
+                                    security_context: Some(SecurityContext {
+                                        privileged: Some(true),
                                         ..Default::default()
-                                    },
-                                    ContainerPort {
-                                        container_port: 5911,
-                                        ..Default::default()
-                                    },
-                                ]),
-                                restart_policy: Some("Always".to_string()),
-                                security_context: Some(SecurityContext {
-                                    privileged: Some(true),
+                                    }),
                                     ..Default::default()
-                                }),
-                                ..Default::default()
-                            }]),
+                                }];
+
+                                // Add Docker sidecar container if Docker is enabled
+                                if config.enable_docker {
+                                    init_containers.push(Container {
+                                        name: "docker-daemon".to_string(),
+                                        image: Some(DOCKER_DIND_IMAGE.to_string()),
+                                        command: Some(vec![
+                                            "dockerd".to_string(),
+                                            "--host=tcp://0.0.0.0:2375".to_string(),
+                                            "--tls=false".to_string(),
+                                        ]),
+                                        restart_policy: Some("Always".to_string()),
+                                        security_context: Some(SecurityContext {
+                                            privileged: Some(true),
+                                            ..Default::default()
+                                        }),
+                                        readiness_probe: Some(Probe {
+                                            http_get: Some(HTTPGetAction {
+                                                port: IntOrString::Int(2375),
+                                                path: Some("/_ping".to_string()),
+                                                ..Default::default()
+                                            }),
+                                            ..Default::default()
+                                        }),
+                                        ..Default::default()
+                                    });
+                                }
+
+                                init_containers
+                            }),
                             containers: containers
                                 .iter()
                                 .enumerate()
@@ -338,6 +379,15 @@ impl AppControllerBackend for KubernetesBackend {
                                         });
                                     }
 
+                                    // Add docker host env var if Docker is enabled
+                                    if config.enable_docker {
+                                        env_vars.push(EnvVar {
+                                            name: "DOCKER_HOST".to_string(),
+                                            value: Some("tcp://127.0.0.1:2375".to_string()),
+                                            ..Default::default()
+                                        });
+                                    }
+
                                     // Determine image pull policy
                                     let image_pull_policy = if config.always_pull_images {
                                         "Always".to_string()
@@ -346,12 +396,19 @@ impl AppControllerBackend for KubernetesBackend {
                                     };
 
                                     // Prepare volume mounts
-                                    let volume_mounts = if container_configs.contains_key(&index) {
-                                        Some(vec![VolumeMount {
+                                    let mut volume_mounts = Vec::new();
+
+                                    // Add config volume mount if this container has config
+                                    if container_configs.contains_key(&index) {
+                                        volume_mounts.push(VolumeMount {
                                             name: format!("container-{}-config", index),
                                             mount_path: "/etc/app-controller/config".to_string(),
                                             ..Default::default()
-                                        }])
+                                        });
+                                    }
+
+                                    let volume_mounts = if !volume_mounts.is_empty() {
+                                        Some(volume_mounts)
                                     } else {
                                         None
                                     };
