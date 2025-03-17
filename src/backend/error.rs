@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum BackendError {
     #[error("The app could not be found.")]
     NotFound,
+    #[error("Container index is invalid.")]
+    InvalidContainerIndex,
     #[error("An internal error occurred: {0}")]
     InternalError(String),
 }

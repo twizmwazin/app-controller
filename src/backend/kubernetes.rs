@@ -1,23 +1,25 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
 use crate::types::{
-    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerOutput, InteractionModel,
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
+    InteractionModel,
 };
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            ConfigMap, Container, ContainerPort, EnvVar, PodSpec, PodTemplateSpec, SecurityContext,
-            Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+            ConfigMap, Container, ContainerPort, EnvVar, Pod, PodSpec, PodTemplateSpec,
+            SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
         },
     },
     apimachinery::pkg::apis::meta::v1::LabelSelector,
 };
 use kube::{
-    api::{ListParams, ObjectMeta, Patch},
+    api::{AttachParams, ListParams, ObjectMeta, Patch},
     Api, Client,
 };
 use poem_openapi::types::ParseFromParameter;
+use tokio::io::AsyncReadExt;
 
 use super::{AppControllerBackend, BackendError};
 
@@ -539,21 +541,15 @@ impl AppControllerBackend for KubernetesBackend {
             .map_err(|e| BackendError::InternalError(e.to_string()))
     }
 
-    async fn get_app_outputs(&self, id: AppId) -> Result<Vec<ContainerOutput>, BackendError> {
-        // First, check if the app exists
-        let deployment = self.get_deployment(id).await?;
-        let app = self.make_app_for_deployment(deployment)?;
-
+    async fn get_app_output(
+        &self,
+        id: AppId,
+        container_index: ContainerIndex,
+    ) -> Result<ContainerOutput, BackendError> {
         // Get the pod for this app
-        let pod_api: Api<k8s_openapi::api::core::v1::Pod> =
-            Api::default_namespaced(self.client.clone());
+        let pod_api: Api<Pod> = Api::default_namespaced(self.client.clone());
         let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
         let pods = pod_api.list(&list_params).await?;
-
-        // If there are no pods, the app is not running
-        if pods.items.is_empty() {
-            return Ok(Vec::new()); // Return empty outputs if app is not running
-        }
 
         // Get the first pod (there should be only one for each app)
         let pod = pods.items.into_iter().next().unwrap();
@@ -564,41 +560,43 @@ impl AppControllerBackend for KubernetesBackend {
             .as_ref()
             .ok_or_else(|| BackendError::InternalError("Pod missing spec".to_string()))?;
 
-        // In k8s_openapi, containers is a Vec<Container>, not an Option<Vec<Container>>
-        let containers = &spec.containers;
+        let container = spec
+            .containers
+            .get(container_index)
+            .ok_or(BackendError::InvalidContainerIndex)?;
 
-        let mut outputs = Vec::new();
+        let mut attached_process = pod_api
+            .exec(
+                "log retrieval",
+                vec!["sh", "-c", "cat $AC_CONTAINER_OUTPUT"],
+                &AttachParams {
+                    container: Some(container.name.clone()),
+                    stdin: false,
+                    stdout: true,
+                    stderr: false,
+                    tty: false,
+                    ..Default::default()
+                },
+            )
+            .await?;
 
-        // For each container (excluding the X11 container)
-        for (index, container) in containers.iter().enumerate() {
-            // Skip the X11 container
-            if container.name == "x11-host" {
-                continue;
-            }
+        let mut output = attached_process
+            .stdout()
+            .ok_or(BackendError::InternalError(
+                "Failed to retrieve logs: no stdout".to_string(),
+            ))?;
 
-            // Get the container's output file
-            let output_path = format!("/outputs/container-{}.log", index);
+        let mut output_string = String::new();
+        output
+            .read_to_string(&mut output_string)
+            .await
+            .map_err(|e| BackendError::InternalError(format!("Failed to retrieve logs: {}", e)))?;
 
-            // Get the pod name
-            let pod_name = pod
-                .metadata
-                .name
-                .clone()
-                .ok_or(BackendError::InternalError("Pod missing name".to_string()))?;
+        attached_process.join().await.map_err(|_| {
+            BackendError::InternalError("Failed to retrieve logs: process error".to_string())
+        })?;
 
-            // For now, we'll return a placeholder message
-            // In a real implementation, we would need to use the Kubernetes API to read the file
-            // This would typically involve using the pod exec API, but that's complex to implement here
-            let output = format!("Output for container {} ({})", index, container.name);
-
-            outputs.push(ContainerOutput {
-                container_index: index,
-                container_name: container.name.clone(),
-                output,
-            });
-        }
-
-        Ok(outputs)
+        Ok(output_string)
     }
 }
 
