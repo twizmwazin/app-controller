@@ -29,14 +29,14 @@ impl AppControllerBackend for MockBackend {
         let app = App { id, config };
 
         self.apps.write().unwrap().insert(id, app.clone());
-        self.statuses
-            .write()
-            .unwrap()
-            .insert(id, if app.config.autostart {
+        self.statuses.write().unwrap().insert(
+            id,
+            if app.config.autostart {
                 AppStatus::Running
             } else {
                 AppStatus::Stopped
-            });
+            },
+        );
 
         Ok(app)
     }
