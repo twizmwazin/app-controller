@@ -75,6 +75,11 @@ pub struct AppConfig {
     /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
+    /// Whether to enable Docker socket for this app.
+    /// If enabled, a Docker daemon sidecar container will be added
+    /// and the Docker socket will be mounted into all containers.
+    #[oai(default)]
+    pub enable_docker: bool,
 }
 
 impl AppConfig {
@@ -123,6 +128,7 @@ impl Example for AppConfig {
                 config: Some("Container-specific configuration".to_string()),
             }],
             always_pull_images: false,
+            enable_docker: false,
         }
     }
 }
