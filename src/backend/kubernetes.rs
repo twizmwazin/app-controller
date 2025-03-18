@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
-use crate::types::{App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel};
+use crate::types::{
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ImagePullPolicy, InteractionModel,
+};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -49,12 +51,11 @@ static DOCKER_DIND_IMAGE: &str = "docker:dind";
 /// ## Annotations:
 /// - `app-controller-name`: The app name
 /// - `app-controller-interaction-model`: The app's interaction model
-/// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy
+/// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy (deprecated, use container-specific image_pull_policy instead)
 /// - `app-controller-enable-docker`: "true" or "false" to control Docker sidecar availability
 /// - `app-controller-autostart`: "true" or "false" to control whether the app starts automatically upon creation
 /// - `app-controller-container-{index}-image`: Image for container at index
 /// - `app-controller-container-{index}-config`: Config for container at index (if any)
-/// - `app-controller-container-{index}-always-pull`: Always pull setting for container at index
 ///
 /// ## App State:
 /// - App state (running/stopped) is represented by the deployment's replica count:
@@ -155,16 +156,38 @@ impl KubernetesBackend {
                 .unwrap_or(false),
         };
 
+        // Get the containers from the pod template spec
+        let containers = deployment
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.template.spec.as_ref())
+            .map(|pod_spec| pod_spec.containers.clone())
+            .unwrap_or_default();
+
         // Look for container-specific annotations
         let mut index = 0;
         while let Some(image) =
             annotations.get(&format!("app-controller-container-{}-image", index))
         {
+            // Get the corresponding container from the pod spec
+            let k8s_container = containers.get(index);
+
+            // Get image pull policy from the Kubernetes container if available
+            let image_pull_policy = k8s_container
+                .and_then(|c| c.image_pull_policy.as_ref())
+                .and_then(|policy| match policy.as_str() {
+                    "Always" => Some(ImagePullPolicy::Always),
+                    "Never" => Some(ImagePullPolicy::Never),
+                    "IfNotPresent" => Some(ImagePullPolicy::IfNotPresent),
+                    _ => None,
+                });
+
             let container_config = ContainerConfig {
                 image: image.to_string(),
                 config: annotations
                     .get(&format!("app-controller-container-{}-config", index))
                     .map(|s| s.to_string()),
+                image_pull_policy,
             };
             config.containers.push(container_config);
             index += 1;
@@ -222,6 +245,9 @@ impl AppControllerBackend for KubernetesBackend {
                     config.to_string(),
                 );
             }
+
+            // We don't need to store image_pull_policy in annotations
+            // as we can retrieve it directly from the Kubernetes container spec
         }
 
         // Get container configs as a map from container index to config
@@ -409,11 +435,18 @@ impl AppControllerBackend for KubernetesBackend {
                                     }
 
                                     // Determine image pull policy
-                                    let image_pull_policy = if config.always_pull_images {
-                                        "Always".to_string()
-                                    } else {
-                                        "IfNotPresent".to_string()
-                                    };
+                                    // Container-specific image_pull_policy takes precedence over app-level always_pull_images
+                                    let image_pull_policy =
+                                        if let Some(policy) = container_spec.image_pull_policy() {
+                                            // Use container-specific policy if specified
+                                            policy.to_string()
+                                        } else if config.always_pull_images {
+                                            // Fall back to app-level always_pull_images (deprecated)
+                                            "Always".to_string()
+                                        } else {
+                                            // Default to IfNotPresent
+                                            "IfNotPresent".to_string()
+                                        };
 
                                     // Prepare volume mounts
                                     let mut volume_mounts = Vec::new();
