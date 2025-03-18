@@ -80,6 +80,11 @@ pub struct AppConfig {
     /// and the Docker socket will be mounted into all containers.
     #[oai(default)]
     pub enable_docker: bool,
+    /// Whether to automatically start the app when it's created.
+    /// If true, the app will be started immediately after creation.
+    /// If false, the app will be created in a stopped state.
+    #[oai(default)]
+    pub autostart: bool,
 }
 
 impl AppConfig {
@@ -124,11 +129,12 @@ impl Example for AppConfig {
             interaction_model: InteractionModel::X11,
             images: Vec::new(),
             containers: vec![ContainerConfig {
-                image: "ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string(),
+                image: "ghcr.io/twizmwazin/app-controller/firefox-demo:latest".to_string(),
                 config: Some("Container-specific configuration".to_string()),
             }],
             always_pull_images: false,
             enable_docker: false,
+            autostart: false,
         }
     }
 }
