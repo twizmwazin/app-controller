@@ -7,7 +7,8 @@ use poem_openapi::{
 use crate::{
     backend::{AppControllerBackend, BackendError},
     types::{
-        App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput, ImagePullPolicy, SocketAddr
+        App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
+        ImagePullPolicy, SocketAddr,
     },
 };
 
