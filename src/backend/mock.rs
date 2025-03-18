@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::{AppControllerBackend, BackendError};
-use crate::types::{App, AppConfig, AppId, AppStatus};
+use crate::types::{App, AppConfig, AppId, AppStatus, ContainerIndex, ContainerOutput};
 
 #[derive(Default)]
 pub struct MockBackend {
@@ -88,5 +88,25 @@ impl AppControllerBackend for MockBackend {
 
     async fn get_app_addr(&self, _id: AppId) -> Result<(IpAddr, u16), BackendError> {
         todo!()
+    }
+
+    async fn get_app_output(
+        &self,
+        id: AppId,
+        index: ContainerIndex,
+    ) -> Result<ContainerOutput, BackendError> {
+        // Check if the app exists
+        let app = self.get_app(id).await?;
+
+        // Check if the requested container index is valid
+        let containers = app.config.get_containers();
+        let container = containers.get(index).ok_or(BackendError::NotFound)?;
+
+        // Create a mock output for the specific container
+        Ok(format!(
+            "Mock output for container {} ({})",
+            index,
+            container.image()
+        ))
     }
 }

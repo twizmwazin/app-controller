@@ -1,8 +1,15 @@
-use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
+use poem_openapi::{
+    param::Path,
+    payload::{Json, PlainText},
+    ApiResponse, OpenApi,
+};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
-    types::{App, AppConfig, AppId, AppStatus, ContainerConfig, ImagePullPolicy, SocketAddr},
+    types::{
+        App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
+        ImagePullPolicy, SocketAddr,
+    },
 };
 
 pub struct Api<B: AppControllerBackend + 'static>(B);
@@ -101,6 +108,22 @@ enum GetAppAddrResponse {
     InternalError,
 }
 
+#[derive(ApiResponse)]
+enum GetAppOutputsResponse {
+    /// The app outputs were found successfully.
+    #[oai(status = 200)]
+    Ok(PlainText<ContainerOutput>),
+    /// The app could not be found.
+    #[oai(status = 404)]
+    NotFound,
+    /// The app outputs could not be found because of an invalid container index.
+    #[oai(status = 404)]
+    InvalidContainerIndex,
+    /// The app outputs could not be retrieved because of an internal error.
+    #[oai(status = 500)]
+    InternalError(Json<String>),
+}
+
 #[OpenApi]
 impl<B: AppControllerBackend> Api<B> {
     /// Create new app
@@ -151,7 +174,7 @@ impl<B: AppControllerBackend> Api<B> {
 
         match self.0.create_app(normalized_config).await {
             Ok(app) => CreateAppResponse::Ok(Json(app)),
-            Err(err) => CreateAppResponse::InternalError(Json(err.to_string())),
+            Err(err) => CreateAppResponse::InternalError(Json(format!("InternalError: {}", err))),
         }
     }
 
@@ -163,7 +186,10 @@ impl<B: AppControllerBackend> Api<B> {
         match self.0.start_app(id.0).await {
             Ok(status) => StartAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StartAppResponse::NotFound,
-            Err(BackendError::InternalError(msg)) => StartAppResponse::InternalError(Json(msg)),
+            Err(BackendError::InternalError(msg)) => {
+                StartAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+            }
+            Err(_) => StartAppResponse::InternalError(Json("Unknown error".to_string())),
         }
     }
 
@@ -173,7 +199,10 @@ impl<B: AppControllerBackend> Api<B> {
         match self.0.stop_app(id.0).await {
             Ok(status) => StopAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StopAppResponse::NotFound,
-            Err(BackendError::InternalError(msg)) => StopAppResponse::InternalError(Json(msg)),
+            Err(BackendError::InternalError(msg)) => {
+                StopAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+            }
+            Err(_) => StopAppResponse::InternalError(Json("Unknown error".to_string())),
         }
     }
 
@@ -185,7 +214,10 @@ impl<B: AppControllerBackend> Api<B> {
         match self.0.delete_app(id.0).await {
             Ok(()) => DeleteAppResponse::Ok,
             Err(BackendError::NotFound) => DeleteAppResponse::NotFound,
-            Err(BackendError::InternalError(msg)) => DeleteAppResponse::InternalError(Json(msg)),
+            Err(BackendError::InternalError(msg)) => {
+                DeleteAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+            }
+            Err(_) => DeleteAppResponse::InternalError(Json("Unknown error".to_string())),
         }
     }
 
@@ -195,7 +227,10 @@ impl<B: AppControllerBackend> Api<B> {
         match self.0.get_app(id.0).await {
             Ok(app) => GetAppResponse::Ok(Json(app)),
             Err(BackendError::NotFound) => GetAppResponse::NotFound,
-            Err(BackendError::InternalError(msg)) => GetAppResponse::InternalError(Json(msg)),
+            Err(BackendError::InternalError(msg)) => {
+                GetAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+            }
+            Err(_) => GetAppResponse::InternalError(Json("Unknown error".to_string())),
         }
     }
 
@@ -204,7 +239,7 @@ impl<B: AppControllerBackend> Api<B> {
     async fn get_all_apps(&self) -> GetAllAppsResponse {
         match self.0.get_all_apps().await {
             Ok(apps) => GetAllAppsResponse::Ok(Json(apps)),
-            Err(err) => GetAllAppsResponse::InternalError(Json(err.to_string())),
+            Err(err) => GetAllAppsResponse::InternalError(Json(format!("InternalError: {}", err))),
         }
     }
 
@@ -218,6 +253,30 @@ impl<B: AppControllerBackend> Api<B> {
             })),
             Err(BackendError::NotFound) => GetAppAddrResponse::NotFound,
             Err(BackendError::InternalError(_)) => GetAppAddrResponse::InternalError,
+            Err(_) => GetAppAddrResponse::InternalError,
         }
+    }
+
+    /// Get app output
+    ///
+    /// Retrieve the outputs from a specific container in the app.
+    /// Each container writes its output to a file specified by the
+    /// AC_CONTAINER_OUTPUT environment variable.
+    #[oai(path = "/app/:id/output/:index", method = "get")]
+    async fn get_app_output(
+        &self,
+        id: Path<AppId>,
+        index: Path<ContainerIndex>,
+    ) -> GetAppOutputsResponse {
+        self.0.get_app_output(id.0, index.0).await.map_or_else(
+            |err| match err {
+                BackendError::NotFound => GetAppOutputsResponse::NotFound,
+                BackendError::InvalidContainerIndex => GetAppOutputsResponse::InvalidContainerIndex,
+                BackendError::InternalError(msg) => {
+                    GetAppOutputsResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                }
+            },
+            |outputs| GetAppOutputsResponse::Ok(PlainText(outputs)),
+        )
     }
 }

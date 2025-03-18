@@ -1,0 +1,4 @@
+FROM alpine:3.21
+
+# Loop from 1 to 100 and write the numbers to the log file
+CMD ["sh", "-c", "for i in $(seq 1 100); do echo $i >> $AC_CONTAINER_OUTPUT; done; sleep 100d" ]

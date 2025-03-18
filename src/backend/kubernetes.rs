@@ -1,13 +1,14 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
 use crate::types::{
-    App, AppConfig, AppId, AppStatus, ContainerConfig, ImagePullPolicy, InteractionModel,
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
+    ImagePullPolicy, InteractionModel,
 };
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            ConfigMap, Container, ContainerPort, EnvVar, ExecAction, HTTPGetAction, PodSpec,
+            ConfigMap, Container, ContainerPort, EnvVar, ExecAction, HTTPGetAction, Pod, PodSpec,
             PodTemplateSpec, Probe, SecurityContext, Service, ServicePort, ServiceSpec, Volume,
             VolumeMount,
         },
@@ -15,10 +16,11 @@ use k8s_openapi::{
     apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
 };
 use kube::{
-    api::{ListParams, ObjectMeta, Patch},
+    api::{AttachParams, ListParams, ObjectMeta, Patch},
     Api, Client,
 };
 use poem_openapi::types::ParseFromParameter;
+use tokio::io::AsyncReadExt;
 
 use super::{AppControllerBackend, BackendError};
 
@@ -336,9 +338,21 @@ impl AppControllerBackend for KubernetesBackend {
                         ..Default::default()
                     }),
                     spec: Some({
-                        // Collect all volumes
-                        let volumes: Vec<Volume> =
-                            config_map_volumes.iter().map(|(_, v)| v.clone()).collect();
+                        // Create a volume for container outputs
+                        let output_volume = Volume {
+                            name: "container-outputs".to_string(),
+                            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource {
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        };
+
+                        // Add the output volume to the list of volumes
+                        let mut all_volumes = config_map_volumes
+                            .iter()
+                            .map(|(_, v)| v.clone())
+                            .collect::<Vec<Volume>>();
+                        all_volumes.push(output_volume);
 
                         // Create the pod spec
                         PodSpec {
@@ -425,6 +439,14 @@ impl AppControllerBackend for KubernetesBackend {
                                         });
                                     }
 
+                                    // Add AC_CONTAINER_OUTPUT env var for all containers except X11
+                                    let output_path = format!("/outputs/container-{}.log", index);
+                                    env_vars.push(EnvVar {
+                                        name: "AC_CONTAINER_OUTPUT".to_string(),
+                                        value: Some(output_path),
+                                        ..Default::default()
+                                    });
+
                                     // Add docker host env var if Docker is enabled
                                     if config.enable_docker {
                                         env_vars.push(EnvVar {
@@ -460,6 +482,13 @@ impl AppControllerBackend for KubernetesBackend {
                                         });
                                     }
 
+                                    // Add output volume mount for all containers
+                                    volume_mounts.push(VolumeMount {
+                                        name: "container-outputs".to_string(),
+                                        mount_path: "/outputs".to_string(),
+                                        ..Default::default()
+                                    });
+
                                     let volume_mounts = if !volume_mounts.is_empty() {
                                         Some(volume_mounts)
                                     } else {
@@ -481,11 +510,7 @@ impl AppControllerBackend for KubernetesBackend {
                                     }
                                 })
                                 .collect(),
-                            volumes: if !volumes.is_empty() {
-                                Some(volumes)
-                            } else {
-                                None
-                            },
+                            volumes: Some(all_volumes),
                             ..Default::default()
                         }
                     }),
@@ -621,6 +646,70 @@ impl AppControllerBackend for KubernetesBackend {
         IpAddr::from_str(&raw)
             .map(|ip| (ip, 5911))
             .map_err(|e| BackendError::InternalError(e.to_string()))
+    }
+
+    async fn get_app_output(
+        &self,
+        id: AppId,
+        container_index: ContainerIndex,
+    ) -> Result<ContainerOutput, BackendError> {
+        // Get the pod for this app
+        let pod_api: Api<Pod> = Api::default_namespaced(self.client.clone());
+        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let pods = pod_api.list(&list_params).await?;
+
+        // Get the first pod (there should be only one for each app)
+        let pod = pods
+            .items
+            .into_iter()
+            .next()
+            .ok_or(BackendError::NotFound)?;
+        let spec = pod
+            .spec
+            .as_ref()
+            .ok_or_else(|| BackendError::InternalError("Pod missing spec".to_string()))?;
+        let pod_name = pod
+            .metadata
+            .name
+            .ok_or(BackendError::InternalError("Pod missing name".to_string()))?;
+
+        // Get the containers in the pod
+        let container = spec
+            .containers
+            .get(container_index)
+            .ok_or(BackendError::InvalidContainerIndex)?;
+
+        let params = AttachParams::default()
+            .container(&container.name)
+            .stdin(false)
+            .stdout(true)
+            .stderr(false)
+            .tty(false);
+        let mut attached_process = pod_api
+            .exec(
+                &pod_name,
+                vec!["sh", "-c", "cat $AC_CONTAINER_OUTPUT"],
+                &params,
+            )
+            .await?;
+
+        let mut output = attached_process
+            .stdout()
+            .ok_or(BackendError::InternalError(
+                "Failed to retrieve logs: no stdout".to_string(),
+            ))?;
+
+        let mut output_string = String::new();
+        output
+            .read_to_string(&mut output_string)
+            .await
+            .map_err(|e| BackendError::InternalError(format!("Failed to retrieve logs: {}", e)))?;
+
+        attached_process.join().await.map_err(|_| {
+            BackendError::InternalError("Failed to retrieve logs: process error".to_string())
+        })?;
+
+        Ok(output_string)
     }
 }
 

@@ -190,6 +190,8 @@ pub struct App {
     pub config: AppConfig,
 }
 
+pub type ContainerIndex = usize;
+
 pub type IpAddr = String;
 
 /// Address and port of a app.
@@ -199,3 +201,5 @@ pub struct SocketAddr {
     pub ip: IpAddr,
     pub port: u16,
 }
+
+pub type ContainerOutput = String;
