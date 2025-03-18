@@ -6,6 +6,7 @@ RUN apk add --no-cache \
     wayvnc \
     xwayland \
     xhost \
+    xset \
     novnc \
     websockify \
     mesa-dri-gallium \
