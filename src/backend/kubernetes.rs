@@ -5,8 +5,9 @@ use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            ConfigMap, Container, ContainerPort, EnvVar, HTTPGetAction, PodSpec, PodTemplateSpec,
-            Probe, SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+            ConfigMap, Container, ContainerPort, EnvVar, ExecAction, HTTPGetAction, PodSpec,
+            PodTemplateSpec, Probe, SecurityContext, Service, ServicePort, ServiceSpec, Volume,
+            VolumeMount,
         },
     },
     apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -334,6 +335,16 @@ impl AppControllerBackend for KubernetesBackend {
                                         privileged: Some(true),
                                         ..Default::default()
                                     }),
+                                    liveness_probe: Some(Probe {
+                                        exec: Some(ExecAction {
+                                            command: Some(vec![
+                                                "sh".to_string(),
+                                                "-c".to_string(),
+                                                "DISPLAY=:0 xset q > /dev/null 2>&1".to_string(),
+                                            ]),
+                                        }),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }];
 
@@ -352,7 +363,7 @@ impl AppControllerBackend for KubernetesBackend {
                                             privileged: Some(true),
                                             ..Default::default()
                                         }),
-                                        readiness_probe: Some(Probe {
+                                        liveness_probe: Some(Probe {
                                             http_get: Some(HTTPGetAction {
                                                 port: IntOrString::Int(2375),
                                                 path: Some("/_ping".to_string()),
