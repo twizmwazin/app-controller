@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
-use crate::types::{App, AppConfig, AppId, AppStatus, ContainerConfig, InteractionModel};
+use crate::types::{
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ImagePullPolicy, InteractionModel,
+};
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -174,9 +176,9 @@ impl KubernetesBackend {
             let image_pull_policy = k8s_container
                 .and_then(|c| c.image_pull_policy.as_ref())
                 .and_then(|policy| match policy.as_str() {
-                    "Always" => Some(crate::types::ImagePullPolicy::Always),
-                    "Never" => Some(crate::types::ImagePullPolicy::Never),
-                    "IfNotPresent" => Some(crate::types::ImagePullPolicy::IfNotPresent),
+                    "Always" => Some(ImagePullPolicy::Always),
+                    "Never" => Some(ImagePullPolicy::Never),
+                    "IfNotPresent" => Some(ImagePullPolicy::IfNotPresent),
                     _ => None,
                 });
 
