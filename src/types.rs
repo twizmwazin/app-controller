@@ -96,10 +96,11 @@ pub struct AppConfig {
     /// Use either this field or 'images', not both.
     #[oai(default)]
     pub containers: Vec<ContainerConfig>,
-    /// Whether to always pull images from the registry.
-    /// @deprecated Use container-specific image_pull_policy instead.
+    /// **Deprecated:** Use container-specific image_pull_policy instead.
     /// This field is maintained for backward compatibility but container-specific
     /// image_pull_policy takes precedence when specified.
+    ///
+    /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
     /// Whether to enable Docker socket for this app.
