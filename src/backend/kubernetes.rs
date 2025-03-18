@@ -659,31 +659,37 @@ impl AppControllerBackend for KubernetesBackend {
         let pods = pod_api.list(&list_params).await?;
 
         // Get the first pod (there should be only one for each app)
-        let pod = pods.items.into_iter().next().unwrap();
-
-        // Get the containers in the pod
+        let pod = pods
+            .items
+            .into_iter()
+            .next()
+            .ok_or(BackendError::NotFound)?;
         let spec = pod
             .spec
             .as_ref()
             .ok_or_else(|| BackendError::InternalError("Pod missing spec".to_string()))?;
+        let pod_name = pod
+            .metadata
+            .name
+            .ok_or(BackendError::InternalError("Pod missing name".to_string()))?;
 
+        // Get the containers in the pod
         let container = spec
             .containers
             .get(container_index)
             .ok_or(BackendError::InvalidContainerIndex)?;
 
+        let params = AttachParams::default()
+            .container(&container.name)
+            .stdin(false)
+            .stdout(true)
+            .stderr(false)
+            .tty(false);
         let mut attached_process = pod_api
             .exec(
-                "log retrieval",
+                &pod_name,
                 vec!["sh", "-c", "cat $AC_CONTAINER_OUTPUT"],
-                &AttachParams {
-                    container: Some(container.name.clone()),
-                    stdin: false,
-                    stdout: true,
-                    stderr: false,
-                    tty: false,
-                    ..Default::default()
-                },
+                &params,
             )
             .await?;
 
