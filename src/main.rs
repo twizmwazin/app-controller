@@ -17,10 +17,14 @@ async fn main() -> Result<(), std::io::Error> {
     let api_service = OpenApiService::new(Api::from(backend), "App Controller", "0.1")
         .server("http://localhost:3000/api");
 
+    let json_schema_endpoint = api_service.spec_endpoint();
+    let yaml_schema_endpoint = api_service.spec_endpoint_yaml();
     let ui = api_service.rapidoc();
 
     let app = Route::new()
         .nest("/api", api_service)
+        .nest("/openapi.json", json_schema_endpoint)
+        .nest("/openapi.yaml", yaml_schema_endpoint)
         .nest("/doc", ui)
         .at("/", get(index));
 
