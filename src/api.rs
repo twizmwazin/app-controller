@@ -7,8 +7,7 @@ use poem_openapi::{
 use crate::{
     backend::{AppControllerBackend, BackendError},
     types::{
-        App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
-        SocketAddr,
+        App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput, ImagePullPolicy, SocketAddr
     },
 };
 
@@ -165,6 +164,7 @@ impl<B: AppControllerBackend> Api<B> {
                 normalized_config.containers.push(ContainerConfig {
                     image: image.clone(),
                     config: None,
+                    image_pull_policy: Some(ImagePullPolicy::IfNotPresent),
                 });
             }
             // Clear the images field

@@ -2,13 +2,13 @@ use std::{collections::BTreeMap, net::IpAddr, str::FromStr};
 
 use crate::types::{
     App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
-    InteractionModel,
+    ImagePullPolicy, InteractionModel,
 };
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
         core::v1::{
-            ConfigMap, Container, ContainerPort, EnvVar, HTTPGetAction, Pod, PodSpec,
+            ConfigMap, Container, ContainerPort, EnvVar, ExecAction, HTTPGetAction, Pod, PodSpec,
             PodTemplateSpec, Probe, SecurityContext, Service, ServicePort, ServiceSpec, Volume,
             VolumeMount,
         },
@@ -53,11 +53,11 @@ static DOCKER_DIND_IMAGE: &str = "docker:dind";
 /// ## Annotations:
 /// - `app-controller-name`: The app name
 /// - `app-controller-interaction-model`: The app's interaction model
-/// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy
+/// - `app-controller-always-pull-images`: "true" or "false" to control image pull policy (deprecated, use container-specific image_pull_policy instead)
 /// - `app-controller-enable-docker`: "true" or "false" to control Docker sidecar availability
+/// - `app-controller-autostart`: "true" or "false" to control whether the app starts automatically upon creation
 /// - `app-controller-container-{index}-image`: Image for container at index
 /// - `app-controller-container-{index}-config`: Config for container at index (if any)
-/// - `app-controller-container-{index}-always-pull`: Always pull setting for container at index
 ///
 /// ## App State:
 /// - App state (running/stopped) is represented by the deployment's replica count:
@@ -152,18 +152,44 @@ impl KubernetesBackend {
                 .get("app-controller-enable-docker")
                 .map(|s| s == "true")
                 .unwrap_or(false),
+            autostart: annotations
+                .get("app-controller-autostart")
+                .map(|s| s == "true")
+                .unwrap_or(false),
         };
+
+        // Get the containers from the pod template spec
+        let containers = deployment
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.template.spec.as_ref())
+            .map(|pod_spec| pod_spec.containers.clone())
+            .unwrap_or_default();
 
         // Look for container-specific annotations
         let mut index = 0;
         while let Some(image) =
             annotations.get(&format!("app-controller-container-{}-image", index))
         {
+            // Get the corresponding container from the pod spec
+            let k8s_container = containers.get(index);
+
+            // Get image pull policy from the Kubernetes container if available
+            let image_pull_policy = k8s_container
+                .and_then(|c| c.image_pull_policy.as_ref())
+                .and_then(|policy| match policy.as_str() {
+                    "Always" => Some(ImagePullPolicy::Always),
+                    "Never" => Some(ImagePullPolicy::Never),
+                    "IfNotPresent" => Some(ImagePullPolicy::IfNotPresent),
+                    _ => None,
+                });
+
             let container_config = ContainerConfig {
                 image: image.to_string(),
                 config: annotations
                     .get(&format!("app-controller-container-{}-config", index))
                     .map(|s| s.to_string()),
+                image_pull_policy,
             };
             config.containers.push(container_config);
             index += 1;
@@ -178,8 +204,8 @@ impl KubernetesBackend {
 
 impl AppControllerBackend for KubernetesBackend {
     async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
-        // To create an app, we need a service and a deployment. The deployment
-        // should have zero replicas initially.
+        // To create an app, we need a service and a deployment. The deployment's
+        // initial replica count is determined by the autostart parameter.
 
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
@@ -199,6 +225,10 @@ impl AppControllerBackend for KubernetesBackend {
                 "app-controller-enable-docker".to_string(),
                 config.enable_docker.to_string(),
             ),
+            (
+                "app-controller-autostart".to_string(),
+                config.autostart.to_string(),
+            ),
         ]);
 
         // Get the containers for this app
@@ -217,6 +247,9 @@ impl AppControllerBackend for KubernetesBackend {
                     config.to_string(),
                 );
             }
+
+            // We don't need to store image_pull_policy in annotations
+            // as we can retrieve it directly from the Kubernetes container spec
         }
 
         // Get container configs as a map from container index to config
@@ -294,7 +327,7 @@ impl AppControllerBackend for KubernetesBackend {
                 ..Default::default()
             },
             spec: Some(DeploymentSpec {
-                replicas: Some(0),
+                replicas: Some(if config.autostart { 1 } else { 0 }),
                 selector: LabelSelector {
                     match_labels: Some(labels.clone()),
                     ..Default::default()
@@ -342,6 +375,16 @@ impl AppControllerBackend for KubernetesBackend {
                                         privileged: Some(true),
                                         ..Default::default()
                                     }),
+                                    liveness_probe: Some(Probe {
+                                        exec: Some(ExecAction {
+                                            command: Some(vec![
+                                                "sh".to_string(),
+                                                "-c".to_string(),
+                                                "DISPLAY=:0 xset q > /dev/null 2>&1".to_string(),
+                                            ]),
+                                        }),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }];
 
@@ -360,7 +403,7 @@ impl AppControllerBackend for KubernetesBackend {
                                             privileged: Some(true),
                                             ..Default::default()
                                         }),
-                                        readiness_probe: Some(Probe {
+                                        liveness_probe: Some(Probe {
                                             http_get: Some(HTTPGetAction {
                                                 port: IntOrString::Int(2375),
                                                 path: Some("/_ping".to_string()),
@@ -414,11 +457,18 @@ impl AppControllerBackend for KubernetesBackend {
                                     }
 
                                     // Determine image pull policy
-                                    let image_pull_policy = if config.always_pull_images {
-                                        "Always".to_string()
-                                    } else {
-                                        "IfNotPresent".to_string()
-                                    };
+                                    // Container-specific image_pull_policy takes precedence over app-level always_pull_images
+                                    let image_pull_policy =
+                                        if let Some(policy) = container_spec.image_pull_policy() {
+                                            // Use container-specific policy if specified
+                                            policy.to_string()
+                                        } else if config.always_pull_images {
+                                            // Fall back to app-level always_pull_images (deprecated)
+                                            "Always".to_string()
+                                        } else {
+                                            // Default to IfNotPresent
+                                            "IfNotPresent".to_string()
+                                        };
 
                                     // Prepare volume mounts
                                     let mut volume_mounts = Vec::new();

@@ -3,6 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use strum::{Display, EnumString};
 
+/// Image pull policy for containers. Determines when to pull the container image.
+#[derive(Debug, Display, Clone, Default, Enum, EnumString, Serialize, Deserialize)]
+pub enum ImagePullPolicy {
+    /// Always pull the image.
+    Always = 0,
+    /// Only pull the image if it's not already present.
+    #[default]
+    IfNotPresent = 1,
+    /// Never pull the image, use the local image only.
+    Never = 2,
+}
+
 /// Interaction model used by the app. The idea here is to allow different ways
 /// of running and presenting an interactive app. For now, only X11 is
 /// supported.
@@ -26,6 +38,10 @@ pub struct ContainerConfig {
     /// environment variable will be set pointing to the mount location.
     #[oai(default)]
     pub config: Option<String>,
+    /// Image pull policy for this container. Determines when to pull the container image.
+    /// Supports the same values as Kubernetes: Always, IfNotPresent, Never.
+    #[oai(default)]
+    pub image_pull_policy: Option<ImagePullPolicy>,
 }
 
 /// Internal representation of a container specification that supports both simple image names
@@ -55,6 +71,14 @@ impl ContainerSpec {
             ContainerSpec::Config(config) => config.config.as_deref(),
         }
     }
+
+    /// Get the image pull policy from this container spec, if any
+    pub fn image_pull_policy(&self) -> Option<ImagePullPolicy> {
+        match self {
+            ContainerSpec::Image(_) => None,
+            ContainerSpec::Config(config) => config.image_pull_policy.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Object)]
@@ -72,6 +96,10 @@ pub struct AppConfig {
     /// Use either this field or 'images', not both.
     #[oai(default)]
     pub containers: Vec<ContainerConfig>,
+    /// **Deprecated:** Use container-specific image_pull_policy instead.
+    /// This field is maintained for backward compatibility but container-specific
+    /// image_pull_policy takes precedence when specified.
+    ///
     /// Whether to always pull images from the registry.
     #[oai(default)]
     pub always_pull_images: bool,
@@ -80,6 +108,11 @@ pub struct AppConfig {
     /// and the Docker socket will be mounted into all containers.
     #[oai(default)]
     pub enable_docker: bool,
+    /// Whether to automatically start the app when it's created.
+    /// If true, the app will be started immediately after creation.
+    /// If false, the app will be created in a stopped state.
+    #[oai(default)]
+    pub autostart: bool,
 }
 
 impl AppConfig {
@@ -124,11 +157,13 @@ impl Example for AppConfig {
             interaction_model: InteractionModel::X11,
             images: Vec::new(),
             containers: vec![ContainerConfig {
-                image: "ghcr.io/twizmwazin/app-container/firefox-demo:latest".to_string(),
+                image: "ghcr.io/twizmwazin/app-controller/firefox-demo:latest".to_string(),
                 config: Some("Container-specific configuration".to_string()),
+                image_pull_policy: Some(ImagePullPolicy::IfNotPresent),
             }],
             always_pull_images: false,
             enable_docker: false,
+            autostart: false,
         }
     }
 }
