@@ -2,7 +2,7 @@ use poem_openapi::{param::Path, payload::Json, ApiResponse, OpenApi};
 
 use crate::{
     backend::{AppControllerBackend, BackendError},
-    types::{App, AppConfig, AppId, AppStatus, ContainerConfig, SocketAddr},
+    types::{App, AppConfig, AppId, AppStatus, ContainerConfig, ImagePullPolicy, SocketAddr},
 };
 
 pub struct Api<B: AppControllerBackend + 'static>(B);
@@ -142,6 +142,7 @@ impl<B: AppControllerBackend> Api<B> {
                 normalized_config.containers.push(ContainerConfig {
                     image: image.clone(),
                     config: None,
+                    image_pull_policy: Some(ImagePullPolicy::IfNotPresent),
                 });
             }
             // Clear the images field
