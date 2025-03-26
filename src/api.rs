@@ -124,6 +124,19 @@ enum GetAppOutputsResponse {
     InternalError(Json<String>),
 }
 
+#[derive(ApiResponse)]
+enum GetAppStatusResponse {
+    /// The app status was retrieved successfully.
+    #[oai(status = 200)]
+    Ok(Json<AppStatus>),
+    /// The app could not be found.
+    #[oai(status = 404)]
+    NotFound,
+    /// The app status could not be retrieved because of an internal error.
+    #[oai(status = 500)]
+    InternalError(Json<String>),
+}
+
 #[OpenApi]
 impl<B: AppControllerBackend> Api<B> {
     /// Create new app
@@ -218,6 +231,22 @@ impl<B: AppControllerBackend> Api<B> {
                 DeleteAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
             }
             Err(_) => DeleteAppResponse::InternalError(Json("Unknown error".to_string())),
+        }
+    }
+
+    /// Get app status
+    ///
+    /// Retrieve the current status of an app.
+    /// Status can be NotReady (0), Ready (1), or Stopped (2).
+    #[oai(path = "/app/:id/status", method = "get")]
+    async fn get_app_status(&self, id: Path<AppId>) -> GetAppStatusResponse {
+        match self.0.get_app_status(id.0).await {
+            Ok(status) => GetAppStatusResponse::Ok(Json(status)),
+            Err(BackendError::NotFound) => GetAppStatusResponse::NotFound,
+            Err(BackendError::InternalError(msg)) => {
+                GetAppStatusResponse::InternalError(Json(format!("InternalError: {}", msg)))
+            }
+            Err(_) => GetAppStatusResponse::InternalError(Json("Unknown error".to_string())),
         }
     }
 

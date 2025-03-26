@@ -29,6 +29,12 @@ pub trait AppControllerBackend: Send + Sync {
     /// Delete the app with the given ID.
     fn delete_app(&self, id: AppId) -> impl Future<Output = Result<(), BackendError>> + Send;
 
+    /// Get the status of the app with the given ID.
+    fn get_app_status(
+        &self,
+        id: AppId,
+    ) -> impl Future<Output = Result<AppStatus, BackendError>> + Send;
+
     /// Get the app with the given ID.
     fn get_app(&self, id: AppId) -> impl Future<Output = Result<App, BackendError>> + Send;
 
