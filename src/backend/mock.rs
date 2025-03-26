@@ -32,7 +32,7 @@ impl AppControllerBackend for MockBackend {
         self.statuses.write().unwrap().insert(
             id,
             if app.config.autostart {
-                AppStatus::Running
+                AppStatus::Ready
             } else {
                 AppStatus::Stopped
             },
@@ -46,11 +46,8 @@ impl AppControllerBackend for MockBackend {
             return Err(BackendError::NotFound);
         }
 
-        self.statuses
-            .write()
-            .unwrap()
-            .insert(id, AppStatus::Running);
-        Ok(AppStatus::Running)
+        self.statuses.write().unwrap().insert(id, AppStatus::Ready);
+        Ok(AppStatus::Ready)
     }
 
     async fn stop_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
@@ -108,5 +105,21 @@ impl AppControllerBackend for MockBackend {
             index,
             container.image()
         ))
+    }
+
+    async fn get_app_status(&self, id: AppId) -> Result<AppStatus, BackendError> {
+        // Check if the app exists
+        if !self.apps.read().unwrap().contains_key(&id) {
+            return Err(BackendError::NotFound);
+        }
+
+        // Return the status from the statuses map, or NotReady if not found
+        Ok(self
+            .statuses
+            .read()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or(AppStatus::NotReady))
     }
 }

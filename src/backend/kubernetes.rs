@@ -552,7 +552,7 @@ impl AppControllerBackend for KubernetesBackend {
             .patch(&name, &Default::default(), &patch)
             .await?;
 
-        Ok(AppStatus::Running)
+        Ok(AppStatus::Ready)
     }
 
     async fn stop_app(&self, id: AppId) -> Result<AppStatus, BackendError> {
@@ -710,6 +710,38 @@ impl AppControllerBackend for KubernetesBackend {
         })?;
 
         Ok(output_string)
+    }
+
+    async fn get_app_status(&self, id: AppId) -> Result<AppStatus, BackendError> {
+        // Get the deployment for this app
+        let deployment = self.get_deployment(id).await?;
+
+        // Check the replica count to determine status
+        let replicas = deployment
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.replicas)
+            .unwrap_or(0);
+
+        // Determine status based on replica count
+        let status = if replicas == 0 {
+            AppStatus::Stopped
+        } else {
+            // Check if the deployment is ready
+            let ready_replicas = deployment
+                .status
+                .as_ref()
+                .and_then(|status| status.ready_replicas)
+                .unwrap_or(0);
+
+            if ready_replicas > 0 {
+                AppStatus::Ready
+            } else {
+                AppStatus::NotReady
+            }
+        };
+
+        Ok(status)
     }
 }
 

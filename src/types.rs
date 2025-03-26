@@ -172,8 +172,8 @@ impl Example for AppConfig {
 #[derive(Debug, Clone, Default, Enum)]
 pub enum AppStatus {
     #[default]
-    Unknown = 0,
-    Running = 1,
+    NotReady = 0,
+    Ready = 1,
     Stopped = 2,
 }
 
