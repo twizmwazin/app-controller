@@ -119,6 +119,9 @@ enum GetAppOutputsResponse {
     /// The app outputs could not be found because of an invalid container index.
     #[oai(status = 404)]
     InvalidContainerIndex,
+    /// The pod is not ready.
+    #[oai(status = 503)]
+    PodNotReady,
     /// The app outputs could not be retrieved because of an internal error.
     #[oai(status = 500)]
     InternalError(Json<String>),
@@ -301,6 +304,7 @@ impl<B: AppControllerBackend> Api<B> {
             |err| match err {
                 BackendError::NotFound => GetAppOutputsResponse::NotFound,
                 BackendError::InvalidContainerIndex => GetAppOutputsResponse::InvalidContainerIndex,
+                BackendError::PodNotReady => GetAppOutputsResponse::PodNotReady,
                 BackendError::InternalError(msg) => {
                     GetAppOutputsResponse::InternalError(Json(format!("InternalError: {}", msg)))
                 }
