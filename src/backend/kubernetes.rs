@@ -184,12 +184,15 @@ impl KubernetesBackend {
                     _ => None,
                 });
 
+            let tty = k8s_container.and_then(|c| c.tty).unwrap_or(false);
+
             let container_config = ContainerConfig {
                 image: image.to_string(),
                 config: annotations
                     .get(&format!("app-controller-container-{}-config", index))
                     .map(|s| s.to_string()),
                 image_pull_policy,
+                tty,
             };
             config.containers.push(container_config);
             index += 1;
@@ -506,6 +509,7 @@ impl AppControllerBackend for KubernetesBackend {
                                         env: Some(env_vars),
                                         image_pull_policy: Some(image_pull_policy),
                                         volume_mounts,
+                                        tty: Some(container_spec.tty()),
                                         ..Default::default()
                                     }
                                 })

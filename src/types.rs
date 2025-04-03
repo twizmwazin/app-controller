@@ -42,6 +42,10 @@ pub struct ContainerConfig {
     /// Supports the same values as Kubernetes: Always, IfNotPresent, Never.
     #[oai(default)]
     pub image_pull_policy: Option<ImagePullPolicy>,
+    /// Whether to use a TTY for this container. This is useful for compatibility
+    /// with containers that expect an interactive terminal.
+    #[oai(default)]
+    pub tty: bool,
 }
 
 /// Internal representation of a container specification that supports both simple image names
@@ -77,6 +81,14 @@ impl ContainerSpec {
         match self {
             ContainerSpec::Image(_) => None,
             ContainerSpec::Config(config) => config.image_pull_policy.clone(),
+        }
+    }
+
+    /// Get the tty setting from this container spec
+    pub fn tty(&self) -> bool {
+        match self {
+            ContainerSpec::Image(_) => false,
+            ContainerSpec::Config(config) => config.tty,
         }
     }
 }
@@ -160,6 +172,7 @@ impl Example for AppConfig {
                 image: "ghcr.io/twizmwazin/app-controller/firefox-demo:latest".to_string(),
                 config: Some("Container-specific configuration".to_string()),
                 image_pull_policy: Some(ImagePullPolicy::IfNotPresent),
+                tty: false,
             }],
             always_pull_images: false,
             enable_docker: false,
