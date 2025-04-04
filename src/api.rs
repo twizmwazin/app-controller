@@ -8,7 +8,7 @@ use crate::{
     backend::{AppControllerBackend, BackendError},
     types::{
         App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
-        ImagePullPolicy, SocketAddr,
+        SocketAddr,
     },
 };
 
@@ -177,8 +177,7 @@ impl<B: AppControllerBackend> Api<B> {
             for image in &normalized_config.images {
                 normalized_config.containers.push(ContainerConfig {
                     image: image.clone(),
-                    config: None,
-                    image_pull_policy: Some(ImagePullPolicy::IfNotPresent),
+                    ..Default::default()
                 });
             }
             // Clear the images field
