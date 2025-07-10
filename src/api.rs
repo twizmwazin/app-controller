@@ -186,7 +186,7 @@ impl<B: AppControllerBackend> Api<B> {
 
         match self.0.create_app(normalized_config).await {
             Ok(app) => CreateAppResponse::Ok(Json(app)),
-            Err(err) => CreateAppResponse::InternalError(Json(format!("InternalError: {}", err))),
+            Err(err) => CreateAppResponse::InternalError(Json(format!("InternalError: {err}"))),
         }
     }
 
@@ -199,7 +199,7 @@ impl<B: AppControllerBackend> Api<B> {
             Ok(status) => StartAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StartAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => {
-                StartAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                StartAppResponse::InternalError(Json(format!("InternalError: {msg}")))
             }
             Err(_) => StartAppResponse::InternalError(Json("Unknown error".to_string())),
         }
@@ -212,7 +212,7 @@ impl<B: AppControllerBackend> Api<B> {
             Ok(status) => StopAppResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => StopAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => {
-                StopAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                StopAppResponse::InternalError(Json(format!("InternalError: {msg}")))
             }
             Err(_) => StopAppResponse::InternalError(Json("Unknown error".to_string())),
         }
@@ -227,7 +227,7 @@ impl<B: AppControllerBackend> Api<B> {
             Ok(()) => DeleteAppResponse::Ok,
             Err(BackendError::NotFound) => DeleteAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => {
-                DeleteAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                DeleteAppResponse::InternalError(Json(format!("InternalError: {msg}")))
             }
             Err(_) => DeleteAppResponse::InternalError(Json("Unknown error".to_string())),
         }
@@ -243,7 +243,7 @@ impl<B: AppControllerBackend> Api<B> {
             Ok(status) => GetAppStatusResponse::Ok(Json(status)),
             Err(BackendError::NotFound) => GetAppStatusResponse::NotFound,
             Err(BackendError::InternalError(msg)) => {
-                GetAppStatusResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                GetAppStatusResponse::InternalError(Json(format!("InternalError: {msg}")))
             }
             Err(_) => GetAppStatusResponse::InternalError(Json("Unknown error".to_string())),
         }
@@ -256,7 +256,7 @@ impl<B: AppControllerBackend> Api<B> {
             Ok(app) => GetAppResponse::Ok(Json(app)),
             Err(BackendError::NotFound) => GetAppResponse::NotFound,
             Err(BackendError::InternalError(msg)) => {
-                GetAppResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                GetAppResponse::InternalError(Json(format!("InternalError: {msg}")))
             }
             Err(_) => GetAppResponse::InternalError(Json("Unknown error".to_string())),
         }
@@ -267,7 +267,7 @@ impl<B: AppControllerBackend> Api<B> {
     async fn get_all_apps(&self) -> GetAllAppsResponse {
         match self.0.get_all_apps().await {
             Ok(apps) => GetAllAppsResponse::Ok(Json(apps)),
-            Err(err) => GetAllAppsResponse::InternalError(Json(format!("InternalError: {}", err))),
+            Err(err) => GetAllAppsResponse::InternalError(Json(format!("InternalError: {err}"))),
         }
     }
 
@@ -301,7 +301,7 @@ impl<B: AppControllerBackend> Api<B> {
                 BackendError::NotFound => GetAppOutputsResponse::NotFound,
                 BackendError::InvalidContainerIndex => GetAppOutputsResponse::InvalidContainerIndex,
                 BackendError::InternalError(msg) => {
-                    GetAppOutputsResponse::InternalError(Json(format!("InternalError: {}", msg)))
+                    GetAppOutputsResponse::InternalError(Json(format!("InternalError: {msg}")))
                 }
             },
             |outputs| GetAppOutputsResponse::Ok(PlainText(outputs)),

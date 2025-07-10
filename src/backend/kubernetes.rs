@@ -79,7 +79,7 @@ impl KubernetesBackend {
     async fn get_deployment(&self, id: AppId) -> Result<Deployment, BackendError> {
         let deployment_api: Api<Deployment> = Api::default_namespaced(self.client.clone());
         // Find the deployment with the correct app-controller-id label
-        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let list_params = ListParams::default().labels(&format!("app-controller-id={id}"));
         let list = deployment_api.list(&list_params).await?;
 
         // There should be only one deployment with the given ID.
@@ -101,19 +101,16 @@ impl KubernetesBackend {
             .metadata
             .labels
             .ok_or(BackendError::InternalError(format!(
-                "Deployment {} missing labels",
-                name
+                "Deployment {name} missing labels"
             )))?
             .get("app-controller-id")
             .ok_or(BackendError::InternalError(format!(
-                "Deployment {} missing app-controller-id",
-                name
+                "Deployment {name} missing app-controller-id"
             )))?
             .parse()
             .map_err(|_| {
                 BackendError::InternalError(format!(
-                    "Invalid app-controller-id label for deployment {}",
-                    name
+                    "Invalid app-controller-id label for deployment {name}"
                 ))
             })?;
 
@@ -121,8 +118,7 @@ impl KubernetesBackend {
             .metadata
             .annotations
             .ok_or(BackendError::InternalError(format!(
-                "Deployment {} missing annotations",
-                name
+                "Deployment {name} missing annotations"
             )))?;
 
         // Get the basic app config
@@ -130,15 +126,13 @@ impl KubernetesBackend {
             name: annotations
                 .get("app-controller-name")
                 .ok_or(BackendError::InternalError(format!(
-                    "Missing app-controller-name annotation for deployment {}",
-                    name
+                    "Missing app-controller-name annotation for deployment {name}"
                 )))?
                 .to_string(),
             interaction_model: InteractionModel::parse_from_parameter(
                 annotations.get("app-controller-interaction-model").ok_or(
                     BackendError::InternalError(format!(
-                        "Missing app-controller-interaction-model annotation for deployment {}",
-                        name
+                        "Missing app-controller-interaction-model annotation for deployment {name}"
                     )),
                 )?,
             )?,
@@ -169,7 +163,7 @@ impl KubernetesBackend {
         // Look for container-specific annotations
         let mut index = 0;
         while let Some(image) =
-            annotations.get(&format!("app-controller-container-{}-image", index))
+            annotations.get(&format!("app-controller-container-{index}-image"))
         {
             // Get the corresponding container from the pod spec
             let k8s_container = containers.get(index);
@@ -189,7 +183,7 @@ impl KubernetesBackend {
             let container_config = ContainerConfig {
                 image: image.to_string(),
                 config: annotations
-                    .get(&format!("app-controller-container-{}-config", index))
+                    .get(&format!("app-controller-container-{index}-config"))
                     .map(|s| s.to_string()),
                 image_pull_policy,
                 tty,
@@ -213,7 +207,7 @@ impl AppControllerBackend for KubernetesBackend {
         let unique_id: u32 = rand::random();
         let name = format!("{}-{:08x}", config.name, unique_id);
 
-        let labels = BTreeMap::from([("app-controller-id".to_string(), format!("{}", unique_id))]);
+        let labels = BTreeMap::from([("app-controller-id".to_string(), format!("{unique_id}"))]);
         let mut annotations = BTreeMap::from([
             ("app-controller-name".to_string(), config.name.clone()),
             (
@@ -240,13 +234,13 @@ impl AppControllerBackend for KubernetesBackend {
         // Add container-specific annotations
         for (i, container) in containers.iter().enumerate() {
             annotations.insert(
-                format!("app-controller-container-{}-image", i),
+                format!("app-controller-container-{i}-image"),
                 container.image().to_string(),
             );
 
             if let Some(config) = container.config() {
                 annotations.insert(
-                    format!("app-controller-container-{}-config", i),
+                    format!("app-controller-container-{i}-config"),
                     config.to_string(),
                 );
             }
@@ -261,7 +255,7 @@ impl AppControllerBackend for KubernetesBackend {
         // Create ConfigMaps for container configs
         let mut config_map_volumes = Vec::new();
         for (index, config_data) in &container_configs {
-            let config_map_name = format!("{}-container-{}-config", name, index);
+            let config_map_name = format!("{name}-container-{index}-config");
             let config_map = ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(config_map_name.clone()),
@@ -284,7 +278,7 @@ impl AppControllerBackend for KubernetesBackend {
             config_map_volumes.push((
                 *index,
                 Volume {
-                    name: format!("container-{}-config", index),
+                    name: format!("container-{index}-config"),
                     config_map: Some(k8s_openapi::api::core::v1::ConfigMapVolumeSource {
                         name: config_map_name,
                         ..Default::default()
@@ -443,7 +437,7 @@ impl AppControllerBackend for KubernetesBackend {
                                     }
 
                                     // Add AC_CONTAINER_OUTPUT env var for all containers except X11
-                                    let output_path = format!("/outputs/container-{}.log", index);
+                                    let output_path = format!("/outputs/container-{index}.log");
                                     env_vars.push(EnvVar {
                                         name: "AC_CONTAINER_OUTPUT".to_string(),
                                         value: Some(output_path),
@@ -479,7 +473,7 @@ impl AppControllerBackend for KubernetesBackend {
                                     // Add config volume mount if this container has config
                                     if container_configs.contains_key(&index) {
                                         volume_mounts.push(VolumeMount {
-                                            name: format!("container-{}-config", index),
+                                            name: format!("container-{index}-config"),
                                             mount_path: "/etc/app-controller/config".to_string(),
                                             ..Default::default()
                                         });
@@ -588,7 +582,7 @@ impl AppControllerBackend for KubernetesBackend {
         let config_map_api: Api<ConfigMap> = Api::default_namespaced(self.client.clone());
 
         // Delete all resources with the app-controller-id label
-        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let list_params = ListParams::default().labels(&format!("app-controller-id={id}"));
         let config_maps = config_map_api.list(&list_params).await?;
         for config_map in config_maps.items {
             if let Some(name) = config_map.metadata.name {
@@ -626,7 +620,7 @@ impl AppControllerBackend for KubernetesBackend {
 
     async fn get_app_addr(&self, id: AppId) -> Result<(IpAddr, u16), BackendError> {
         let service_api: Api<Service> = Api::default_namespaced(self.client.clone());
-        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let list_params = ListParams::default().labels(&format!("app-controller-id={id}"));
         let list = service_api.list(&list_params).await?;
 
         // There should be only one service with the given ID.
@@ -659,7 +653,7 @@ impl AppControllerBackend for KubernetesBackend {
     ) -> Result<ContainerOutput, BackendError> {
         // Get the pod for this app
         let pod_api: Api<Pod> = Api::default_namespaced(self.client.clone());
-        let list_params = ListParams::default().labels(&format!("app-controller-id={}", id));
+        let list_params = ListParams::default().labels(&format!("app-controller-id={id}"));
         let pods = pod_api.list(&list_params).await?;
 
         // Get the first pod (there should be only one for each app)
@@ -707,7 +701,7 @@ impl AppControllerBackend for KubernetesBackend {
         output
             .read_to_string(&mut output_string)
             .await
-            .map_err(|e| BackendError::InternalError(format!("Failed to retrieve logs: {}", e)))?;
+            .map_err(|e| BackendError::InternalError(format!("Failed to retrieve logs: {e}")))?;
 
         attached_process.join().await.map_err(|_| {
             BackendError::InternalError("Failed to retrieve logs: process error".to_string())
