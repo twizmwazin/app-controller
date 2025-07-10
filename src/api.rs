@@ -15,8 +15,8 @@ use crate::{
 pub struct Api(Box<dyn AppControllerBackend>);
 
 impl Api {
-    pub fn new(backend: impl AppControllerBackend + 'static) -> Self {
-        Self(Box::new(backend))
+    pub fn new(backend: Box<dyn AppControllerBackend>) -> Self {
+        Self(backend)
     }
 }
 
