@@ -2,11 +2,13 @@ mod error;
 mod kubernetes;
 #[cfg(test)]
 mod mock;
+mod null;
 
 pub use error::BackendError;
 pub use kubernetes::KubernetesBackend;
 #[cfg(test)]
 pub use mock::MockBackend;
+pub use null::NullBackend;
 
 use std::net::IpAddr;
 

@@ -1,19 +1,41 @@
-use app_controller::{api::Api, backend::KubernetesBackend};
+use app_controller::{
+    api::Api,
+    backend::{AppControllerBackend, KubernetesBackend, NullBackend},
+};
 use kube::Client;
 use poem::{Route, Server, get, handler, listener::TcpListener, web::Redirect};
 use poem_openapi::OpenApiService;
+use std::env;
 
 #[handler]
 fn index() -> Redirect {
     Redirect::temporary("/doc")
 }
 
+async fn initialize_backend() -> Option<Box<dyn AppControllerBackend>> {
+    let backend_type =
+        env::var("APP_CONTROLLER_BACKEND").unwrap_or_else(|_| "kubernetes".to_string());
+    match backend_type.as_str() {
+        "kubernetes" => {
+            let k8s_client = Client::try_default().await.ok()?;
+            tracing::info!("Using Kubernetes backend");
+            Some(Box::new(KubernetesBackend::new(k8s_client)))
+        }
+        "null" => {
+            tracing::info!("Using Null backend");
+            Some(Box::new(NullBackend))
+        }
+        _ => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     tracing_subscriber::fmt::init();
 
-    let k8s_client = Client::try_default().await.unwrap();
-    let backend = KubernetesBackend::new(k8s_client);
+    let backend = initialize_backend().await.expect(
+        "Failed to initialize backend. Set APP_CONTROLLER_BACKEND to 'kubernetes' or 'null'",
+    );
     let api_service = OpenApiService::new(Api::new(backend), "App Controller", "0.1")
         .server("http://localhost:3000/api");
 
