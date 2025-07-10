@@ -1,6 +1,6 @@
 use app_controller::{api::Api, backend::KubernetesBackend};
 use kube::Client;
-use poem::{get, handler, listener::TcpListener, web::Redirect, Route, Server};
+use poem::{Route, Server, get, handler, listener::TcpListener, web::Redirect};
 use poem_openapi::OpenApiService;
 
 #[handler]
@@ -14,7 +14,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     let k8s_client = Client::try_default().await.unwrap();
     let backend = KubernetesBackend::new(k8s_client);
-    let api_service = OpenApiService::new(Api::from(backend), "App Controller", "0.1")
+    let api_service = OpenApiService::new(Api::new(backend), "App Controller", "0.1")
         .server("http://localhost:3000/api");
 
     let json_schema_endpoint = api_service.spec_endpoint();

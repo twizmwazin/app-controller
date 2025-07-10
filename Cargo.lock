@@ -80,6 +80,7 @@ dependencies = [
 name = "app-controller"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "k8s-openapi",
  "kube",
  "poem",
@@ -91,6 +92,17 @@ dependencies = [
  "thiserror 2.0.11",
  "tokio",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "async-trait"
+version = "0.1.88"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

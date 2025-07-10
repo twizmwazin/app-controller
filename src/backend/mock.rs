@@ -2,8 +2,8 @@ use std::{
     collections::HashMap,
     net::IpAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
         RwLock,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -23,6 +23,7 @@ impl MockBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl AppControllerBackend for MockBackend {
     async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
