@@ -16,8 +16,8 @@ use k8s_openapi::{
     apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
 };
 use kube::{
-    api::{AttachParams, ListParams, ObjectMeta, Patch},
     Api, Client,
+    api::{AttachParams, ListParams, ObjectMeta, Patch},
 };
 use poem_openapi::types::ParseFromParameter;
 use tokio::io::AsyncReadExt;
@@ -162,8 +162,7 @@ impl KubernetesBackend {
 
         // Look for container-specific annotations
         let mut index = 0;
-        while let Some(image) =
-            annotations.get(&format!("app-controller-container-{index}-image"))
+        while let Some(image) = annotations.get(&format!("app-controller-container-{index}-image"))
         {
             // Get the corresponding container from the pod spec
             let k8s_container = containers.get(index);
@@ -199,6 +198,7 @@ impl KubernetesBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl AppControllerBackend for KubernetesBackend {
     async fn create_app(&self, config: AppConfig) -> Result<App, BackendError> {
         // To create an app, we need a service and a deployment. The deployment's

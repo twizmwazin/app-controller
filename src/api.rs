@@ -1,7 +1,7 @@
 use poem_openapi::{
+    ApiResponse, OpenApi,
     param::Path,
     payload::{Json, PlainText},
-    ApiResponse, OpenApi,
 };
 
 use crate::{
@@ -12,11 +12,11 @@ use crate::{
     },
 };
 
-pub struct Api<B: AppControllerBackend + 'static>(B);
+pub struct Api(Box<dyn AppControllerBackend>);
 
-impl<B: AppControllerBackend> From<B> for Api<B> {
-    fn from(backend: B) -> Self {
-        Self(backend)
+impl Api {
+    pub fn new(backend: impl AppControllerBackend + 'static) -> Self {
+        Self(Box::new(backend))
     }
 }
 
@@ -138,7 +138,7 @@ enum GetAppStatusResponse {
 }
 
 #[OpenApi]
-impl<B: AppControllerBackend> Api<B> {
+impl Api {
     /// Create new app
     ///
     /// Provide either 'images' (simple format) or 'containers' (advanced format), not both.

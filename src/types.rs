@@ -1,4 +1,4 @@
-use poem_openapi::{types::Example, Enum, Object};
+use poem_openapi::{Enum, Object, types::Example};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use strum::{Display, EnumString};
