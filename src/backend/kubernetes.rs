@@ -671,6 +671,18 @@ impl AppControllerBackend for KubernetesBackend {
             .name
             .ok_or(BackendError::InternalError("Pod missing name".to_string()))?;
 
+        // Check if the pod is ready before attempting to execute a command
+        let status = pod
+            .status
+            .as_ref()
+            .ok_or_else(|| BackendError::InternalError("Pod missing status".to_string()))?;
+
+        // Check the pod phase
+        let phase = status.phase.as_deref().unwrap_or("");
+        if phase != "Running" {
+            return Err(BackendError::PodNotReady);
+        }
+
         // Get the containers in the pod
         let container = spec
             .containers
