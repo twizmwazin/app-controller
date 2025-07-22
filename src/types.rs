@@ -18,7 +18,7 @@ pub enum ImagePullPolicy {
 /// Interaction model used by the app. The idea here is to allow different ways
 /// of running and presenting an interactive app. For now, only X11 is
 /// supported.
-#[derive(Debug, Display, Clone, Default, Enum, EnumString)]
+#[derive(Debug, Display, Clone, Default, Enum, EnumString, PartialEq)]
 pub enum InteractionModel {
     /// Unknown interaction model.
     #[default]

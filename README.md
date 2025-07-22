@@ -21,20 +21,29 @@ cargo build --release
 ## Container
 
 App Controller is published automatically to ghcr.io on each commit to `main`.
-Run the container like this:
 
+Run with Kubernetes backend (default):
 ```sh
-docker run -p 3000:3000 ghcr.io/twizmwazin/app-controller/app-controller
+docker run -p 3000:3000 -v $HOME/.kube/config:/etc/kube/config \
+    ghcr.io/twizmwazin/app-controller/app-controller
+```
+
+Run with Docker backend:
+```sh
+docker run -p 3000:3000 -v /var/run/docker.sock:/var/run/docker.sock \
+  -e APP_CONTROLLER_BACKEND=docker \
+  ghcr.io/twizmwazin/app-controller/app-controller
 ```
 
 # API Documentation
 
 Documentation is served automatically at `/doc` on App Controller. This can be
 easily viewed on a developer machine by running App Controller in a container
-and using a web browser. First, run the container:
+and using a web browser. First, run the container with the null backend:
 
 ```sh
-docker run --rm -e APP_CONTROLLER_BACKEND=null -p 3000:3000 ghcr.io/twizmwazin/app-controller/app-controller
+docker run --rm -e APP_CONTROLLER_BACKEND=null -p 3000:3000 \
+  ghcr.io/twizmwazin/app-controller/app-controller
 ```
 
 Then, open http://localhost:3000 in a web browser.
@@ -43,11 +52,12 @@ Then, open http://localhost:3000 in a web browser.
 
 App Controller currently does not accept any command line parameters. It does
 read from a few environment variables:
-- `APP_CONTROLLER_BACKEND`: `kubernetes` (default) or `null`. With the
-    kubernetes backend, all functionality is supported. With the null backend,
-    all endpoints should respond without erroring, but do not execute any
-    functionality. This is intended for testing and reading the integrated
-    documentation.
+- `APP_CONTROLLER_BACKEND`: `kubernetes` (default), `docker`, or `null`. With the
+    kubernetes backend, all functionality is supported on Kubernetes clusters. 
+    With the docker backend, all functionality is supported using local Docker.
+    With the null backend, all endpoints should respond without erroring, but do 
+    not execute any functionality. This is intended for testing and reading the 
+    integrated documentation.
 - `RUST_LOG`: Controls the log level. Common values are `error`, `warn`, `info`,
     `debug`, `trace`, or `off`. See [here](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)
     for more information.
@@ -59,5 +69,10 @@ There are also backend-specific options:
 # Data Management
 
 App Controller stores as little data as possible, all in the container backend.
-For Kubernetes, this is a series of labels, annotations, and config objects. See
-[./src/backend/kubernetes.rs](./src/backend/kubernetes.rs) for details.
+
+For **Kubernetes**, this is a series of labels, annotations, and config objects.
+See [./src/backend/kubernetes.rs](./src/backend/kubernetes.rs) for details.
+
+For **Docker**, this is stored in container labels and Docker volumes. Labels
+store most metadata, and local volumes are used in place of configmaps.  See
+[./src/backend/docker.rs](./src/backend/docker.rs) for more.
