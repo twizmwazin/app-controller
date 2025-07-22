@@ -1,6 +1,7 @@
 use super::{AppControllerBackend, BackendError};
 use crate::types::{
-    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput, ImagePullPolicy
+    App, AppConfig, AppId, AppStatus, ContainerConfig, ContainerIndex, ContainerOutput,
+    ImagePullPolicy,
 };
 use bollard::Docker;
 use bollard::container::LogOutput;
