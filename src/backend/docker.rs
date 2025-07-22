@@ -762,10 +762,7 @@ impl DockerBackend {
     }
 
     /// Helper to get all containers for a given app id
-    async fn get_app_containers(
-        &self,
-        id: AppId,
-    ) -> Result<Vec<ContainerSummary>, BackendError> {
+    async fn get_app_containers(&self, id: AppId) -> Result<Vec<ContainerSummary>, BackendError> {
         let filters = Self::create_app_filters(id);
         let containers = self
             .docker
