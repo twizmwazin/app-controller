@@ -802,7 +802,7 @@ mod tests {
             interaction_model: InteractionModel::X11,
             images: vec![image.to_string()],
             containers: vec![],
-            always_pull_images: false,
+            always_pull_images: true,
             enable_docker: false,
             autostart: false,
         }
