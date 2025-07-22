@@ -1,11 +1,13 @@
 mod error;
 mod kubernetes;
+mod docker;
 #[cfg(test)]
 mod mock;
 mod null;
 
 pub use error::BackendError;
 pub use kubernetes::KubernetesBackend;
+pub use docker::DockerBackend;
 #[cfg(test)]
 pub use mock::MockBackend;
 pub use null::NullBackend;

@@ -1,6 +1,4 @@
-use thiserror::Error;
-
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     #[error("The app could not be found.")]
     NotFound,
@@ -21,6 +19,18 @@ impl From<kube::Error> for BackendError {
 
 impl From<std::string::FromUtf8Error> for BackendError {
     fn from(err: std::string::FromUtf8Error) -> Self {
+        Self::InternalError(err.to_string())
+    }
+}
+
+impl From<bollard::errors::Error> for BackendError {
+    fn from(err: bollard::errors::Error) -> Self {
+        Self::InternalError(err.to_string())
+    }
+}
+
+impl From<std::net::AddrParseError> for BackendError {
+    fn from(err: std::net::AddrParseError) -> Self {
         Self::InternalError(err.to_string())
     }
 }
