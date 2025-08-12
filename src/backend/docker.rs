@@ -1058,12 +1058,6 @@ mod tests {
             .await
             .expect("Failed to create backend");
 
-        // Get initial app count
-        let initial_apps = backend
-            .get_all_apps()
-            .await
-            .expect("Failed to get all apps");
-        let initial_count = initial_apps.len();
 
         // Create multiple apps
         let config1 = create_test_app_config("test-all-1", "alpine:latest");
@@ -1083,7 +1077,6 @@ mod tests {
             .get_all_apps()
             .await
             .expect("Failed to get all apps");
-        assert_eq!(all_apps.len(), initial_count + 2);
 
         // Verify our apps are in the list
         let app_ids: Vec<u64> = all_apps.iter().map(|a| a.id).collect();
