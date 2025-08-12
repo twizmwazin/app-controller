@@ -855,7 +855,7 @@ mod tests {
             interaction_model: InteractionModel::X11,
             images: vec!["alpine:latest".to_string()],
             containers: vec![],
-            always_pull_images: false,
+            always_pull_images: true,
             enable_docker: false,
             autostart: true,
         }
