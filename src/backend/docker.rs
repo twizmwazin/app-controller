@@ -1058,7 +1058,6 @@ mod tests {
             .await
             .expect("Failed to create backend");
 
-
         // Create multiple apps
         let config1 = create_test_app_config("test-all-1", "alpine:latest");
         let config2 = create_test_app_config("test-all-2", "alpine:latest");
