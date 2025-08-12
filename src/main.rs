@@ -1,7 +1,8 @@
 use app_controller::{
     api::Api,
-    backend::{AppControllerBackend, KubernetesBackend, NullBackend},
+    backend::{AppControllerBackend, DockerBackend, KubernetesBackend, NullBackend},
 };
+use bollard::Docker;
 use kube::Client;
 use poem::{Route, Server, get, handler, listener::TcpListener, web::Redirect};
 use poem_openapi::OpenApiService;
@@ -20,6 +21,11 @@ async fn initialize_backend() -> Option<Box<dyn AppControllerBackend>> {
             let k8s_client = Client::try_default().await.ok()?;
             tracing::info!("Using Kubernetes backend");
             Some(Box::new(KubernetesBackend::new(k8s_client)))
+        }
+        "docker" => {
+            let docker_client = Docker::connect_with_local_defaults().ok()?;
+            tracing::info!("Using Docker backend");
+            Some(Box::new(DockerBackend::new(docker_client)))
         }
         "null" => {
             tracing::info!("Using Null backend");
