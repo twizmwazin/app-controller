@@ -201,7 +201,6 @@ impl AppControllerBackend for DockerBackend {
             // Configure host settings to share network with X11 container
             let mut host_config = HostConfig {
                 network_mode: Some(format!("container:{x11_container_name}")),
-                auto_remove: Some(true),
                 ..Default::default()
             };
 
@@ -230,7 +229,6 @@ impl AppControllerBackend for DockerBackend {
                             ]),
                             host_config: Some(HostConfig {
                                 binds: Some(vec![format!("{config_volume_name}:/config")]),
-                                auto_remove: Some(true),
                                 ..Default::default()
                             }),
                             ..Default::default()
@@ -555,7 +553,6 @@ impl DockerBackend {
 
         let x11_host_config = HostConfig {
             privileged: Some(true),
-            auto_remove: Some(true),
             ..Default::default()
         };
 
@@ -606,7 +603,6 @@ impl DockerBackend {
         let docker_host_config = HostConfig {
             privileged: Some(true),
             network_mode: Some(format!("container:{x11_container_name}")),
-            auto_remove: Some(true),
             ..Default::default()
         };
 
@@ -1052,8 +1048,8 @@ mod tests {
 
         // Verify status returns appropriate error
         let status_result = backend.get_app_status(app.id).await;
-        assert!(status_result.is_ok()); // Should return Stopped for non-existent app
-        assert!(matches!(status_result.unwrap(), AppStatus::Stopped));
+        assert!(status_result.is_err()); // Returns NotFound error
+        assert!(matches!(status_result.unwrap_err(), BackendError::NotFound));
     }
 
     #[tokio::test]
