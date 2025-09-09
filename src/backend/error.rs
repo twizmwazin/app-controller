@@ -4,6 +4,8 @@ pub enum BackendError {
     NotFound,
     #[error("Container index is invalid.")]
     InvalidContainerIndex,
+    #[error("The pod is not ready.")]
+    PodNotReady,
     #[error("An internal error occurred: {0}")]
     InternalError(String),
 }
